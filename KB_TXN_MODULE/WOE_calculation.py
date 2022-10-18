@@ -315,7 +315,7 @@ if __name__ == "__main__":
 
         return Final_bin_gini
 
-    def write_to_snowflake(data):
+    def write_to_snowflake(data, module_name="kb_txn_module"):
         data1 = data.copy()
         from sqlalchemy.types import (
             Boolean,
@@ -354,7 +354,7 @@ if __name__ == "__main__":
         con = engine.raw_connection()
         data1.columns = map(lambda x: str(x).upper(), data1.columns)
         data1.to_sql(
-            "airflow_demo_write_transformed",
+            f"airflow_demo_write_transformed_woe_{module_name}",
             engine,
             if_exists="replace",
             index=False,
@@ -369,5 +369,4 @@ if __name__ == "__main__":
         "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_TXN_MODULE/data/Final_bin_gini_performance.csv"
     )
     data_woe = woe_Apply(data, Final_bin_gini)
-
     write_to_snowflake(data_woe)

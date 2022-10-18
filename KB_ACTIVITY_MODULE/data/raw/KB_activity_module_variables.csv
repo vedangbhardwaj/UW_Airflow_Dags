@@ -1,0 +1,20 @@
+Sno,variables,Description,Type
+1,LAST_1_MONTH_CUSTOMERS,No of customers added by merchant in last 1 month,Numerical
+2,LAST_2_MONTH_CUSTOMERS,No of customers added by merchant in last 2 months,Numerical
+3,LAST_3_MONTH_CUSTOMERS,No of customers added by merchant in last 3 months,Numerical
+4,RATIO_OF_CUSTOMERS_ADDED_L1_L3_MNTH,Ratio of no of customers added in last 1Months vs last 3 months,Numerical
+5,DELETED_CUSTOMERS,No of deleted customers,Numerical
+6,LAST_1_MONTH_BOOKS,No of books added by merchant in last 1 month,Numerical
+7,LAST_2_MONTH_BOOKS,No of books added by merchant in last 2 months,Numerical
+8,LAST_3_MONTH_BOOKS,No of books added by merchant in last 3 months,Numerical
+9,RATIO_OF_BOOKS_ADDED_L1_L3_MNTH,Ratio of no of books added in last 1Months vs last 3 months,Numerical
+10,DELETED_BOOKS,No of deleted books,Numerical
+11,TOTAL_APPS,Total applications in the merchants mobile device,Numerical
+12,BUSINESS_APPS,Total Business applications in the merchants mobile device,Numerical
+13,FINANCE_APPS,Total Finance applications in the merchants mobile device,Numerical
+14,BUSINESS_TOTALAPPS_PROPORTION,Proportion of Business applications in the merchants mobile device,Numerical
+15,FINANCE_TOTALAPPS_PROPORTION,Proportion of Finance applications in the merchants mobile device,Numerical
+18,DEVICE_BRAND_GD,Mobile device Brand group,Categorical
+20,DEVICE_CARRIER_GROUP,Mobile device network carrier group,Categorical
+21,PRICE,Mobile device price,Numerical
+22,BUSINESS_CARD_FLAG,Has Business card saved flag,Numerical

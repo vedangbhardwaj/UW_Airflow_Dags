@@ -1,14 +1,18 @@
 from airflow.models import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.empty import EmptyOperator
-from great_expectations_provider.operators.great_expectations import (
-    GreatExpectationsOperator,
-)
-from great_expectations.core.batch import BatchRequest
-from great_expectations.data_context.types.base import (
-    DataContextConfig,
-    CheckpointConfig,
-)
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.sensors.external_task import ExternalTaskSensor
+from airflow.models import DagRun
+
+# from great_expectations_provider.operators.great_expectations import (
+#     GreatExpectationsOperator,
+# )
+# from great_expectations.core.batch import BatchRequest
+# from great_expectations.data_context.types.base import (
+#     DataContextConfig,
+#     CheckpointConfig,
+# )
 
 from datetime import datetime
 from datetime import timedelta
@@ -32,6 +36,7 @@ args = {
     "owner": config["owner"],
     "depends_on_past": False,
     "start_date": airflow.utils.dates.days_ago(1),
+    # "start_date": datetime(2022, 10, 17),
     "email": config["email"],
     "email_on_failure": False,
     "email_on_retry": False,
@@ -53,7 +58,7 @@ def generate_dag(dataset_name):
         initial_declaration = BashOperator(
             task_id="Initial_Declaration",
             execution_timeout=timedelta(minutes=60),
-            bash_command= f"cd /Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/{dataset_name}; python Initial_declaration.py",
+            bash_command=f"cd /Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/{dataset_name}; python Initial_declaration.py",
         )
 
         getting_data = BashOperator(
@@ -95,5 +100,69 @@ def generate_dag(dataset_name):
     return dag
 
 
-for dataset in ["KB_TXN_MODULE","KB_ACTIVITY_MODULE"]:
+def combined_prediction_dag(prediction_name):
+    with DAG(
+        dag_id=f"{prediction_name}_dag",
+        default_args=args,
+        schedule_interval=None,
+        max_active_runs=1,
+        max_active_tasks=1,
+        catchup=False,
+    ) as dag:
+
+        def get_most_recent_dag_run(dag_id):
+            dag_runs = DagRun.find(dag_id=dag_id)
+            dag_runs.sort(key=lambda x: x.execution_date, reverse=True)
+            if dag_runs:
+                return dag_runs[0].execution_date
+
+        start = EmptyOperator(task_id=f"{prediction_name}", dag=dag)
+
+        kb_txn_module_wait = ExternalTaskSensor(
+            task_id="KB_TXN_MODULE_LR_wait",
+            external_dag_id="KB_TXN_MODULE_dag",
+            external_task_id="Model_prediction",
+            execution_date_fn=get_most_recent_dag_run("KB_TXN_MODULE_dag"),
+            # execution_delta= timedelta(hours=1),
+            mode="reschedule",
+            dag=dag,
+        )
+        kb_activity_module_wait = ExternalTaskSensor(
+            task_id="KB_ACTIVITY_MODULE_LR_wait",
+            external_dag_id="KB_ACTIVITY_MODULE_dag",
+            external_task_id="Model_prediction",
+            execution_date_fn=get_most_recent_dag_run("KB_ACTIVITY_MODULE_dag"),
+            # execution_delta= timedelta(hours=1),
+            mode="reschedule",
+            dag=dag,
+        )
+        kb_bureau_module_wait = ExternalTaskSensor(
+            task_id="KB_BUREAU_MODULE_LR_wait",
+            external_dag_id="KB_BUREAU_MODULE_dag",
+            external_task_id="Model_prediction",
+            execution_date_fn=get_most_recent_dag_run("KB_BUREAU_MODULE_dag"),
+            # execution_delta= timedelta(hours=1),
+            mode="reschedule",
+            dag=dag,
+        )
+
+        combined_model_prediction = BashOperator(
+            task_id="Combined_model_prediction",
+            execution_timeout=timedelta(minutes=60),
+            bash_command=f"cd /Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/{prediction_name}; python Model_prediction.py",
+        )
+        # report = EmptyOperator(task_id="report", dag=dag)
+
+        start >> [kb_txn_module_wait, kb_activity_module_wait, kb_bureau_module_wait]
+        [
+            kb_txn_module_wait,
+            kb_activity_module_wait,
+            kb_bureau_module_wait,
+        ] >> combined_model_prediction
+
+
+for dataset in ["KB_TXN_MODULE", "KB_ACTIVITY_MODULE", "KB_BUREAU_MODULE"]:
     globals()[f"{dataset}_dag"] = generate_dag(dataset_name=dataset)
+
+for prediction in ["COMBINATION_MODEL_LR"]:
+    globals()[f"{prediction}_dag"] = combined_prediction_dag(prediction_name=prediction)

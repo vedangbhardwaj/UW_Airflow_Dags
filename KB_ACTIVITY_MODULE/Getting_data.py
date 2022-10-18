@@ -43,7 +43,7 @@ def get_data(start_date, end_date):
     return df
 
 
-def write_to_snowflake(data):
+def write_to_snowflake(data, module_name="kb_activity_module"):
     data1 = data.copy()
     from sqlalchemy.types import (
         Boolean,
@@ -61,6 +61,8 @@ def write_to_snowflake(data):
         if dtype_dict[i] == "datetime64[ns]":
             dtype_dict[i] = DateTime
         if dtype_dict[i] == "object":
+            dtype_dict[i] = Text
+        if dtype_dict[i] == "category":
             dtype_dict[i] = Text
         if dtype_dict[i] == "float64":
             dtype_dict[i] = Float
@@ -82,7 +84,7 @@ def write_to_snowflake(data):
     # con = engine.raw_connection()
     data1.columns = map(lambda x: str(x).upper(), data1.columns)
     data1.to_sql(
-        "airflow_demo_write_kb_activity_module",
+        f"airflow_demo_write_transformed_{module_name}",
         engine,
         if_exists="replace",
         index=False,
@@ -119,8 +121,6 @@ def missing_ind_convert_num(df):
     return df
 
 
-
 data = get_data(idc.start_date, idc.end_date)
-# print(data.memory_usage(deep=True).sum())
 data = missing_ind_convert_num(data)
 write_to_snowflake(data)
