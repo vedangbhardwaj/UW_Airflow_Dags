@@ -1,6 +1,10 @@
+from typing import Final
+
+
 if __name__ == "__main__":
     ### initial declaration
     import Initial_declaration as idc
+
     ### sql queries
     import Sql_queries as sq
     import Getting_data as gd
@@ -48,14 +52,31 @@ if __name__ == "__main__":
         return data
 
     data = get_data()
-    print(idc.colsList)
+    print(len(idc.colsList))
     data = data[idc.colsList]
-
     pickled_model = pickle.load(
         open(
             f"/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_TXN_MODULE/models/Model_xgb.pkl",
             "rb",
         )
     )
+    Final_scoring_data = data
+    Final_scoring_data["pred_train"] = pickled_model.predict_proba(Final_scoring_data)[
+        :, 1
+    ]
 
-    results = pickled_model.predict_proba(data)
+    Final_scoring_data["logodds_score"] = np.log(
+        Final_scoring_data["pred_train"] / (1 - Final_scoring_data["pred_train"])
+    )
+
+    isotonic = pickle.load(
+        open(
+            f"/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_TXN_MODULE/models/Model_ISO_calibration_xgb.pkl",
+            "rb",
+        )
+    )
+    Final_scoring_data["Calib_ISO_PD"] = isotonic.predict(
+        Final_scoring_data["pred_train"]
+    )
+
+    Final_scoring_data.columns

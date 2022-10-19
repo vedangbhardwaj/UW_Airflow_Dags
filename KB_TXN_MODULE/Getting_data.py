@@ -44,7 +44,7 @@ def get_data(start_date, end_date):
     return df
 
 
-def write_to_snowflake(data):
+def write_to_snowflake(data, module_name="kb_txn_module"):
     data1 = data.copy()
     from sqlalchemy.types import (
         Boolean,
@@ -83,7 +83,7 @@ def write_to_snowflake(data):
     # con = engine.raw_connection()
     data1.columns = map(lambda x: str(x).upper(), data1.columns)
     data1.to_sql(
-        "airflow_demo_write",
+        f"airflow_demo_write_transformed_{module_name}",
         engine,
         if_exists="replace",
         index=False,
@@ -118,13 +118,6 @@ def missing_ind_convert_num(df):
             df[var] = df[var].replace("--", idc.missing_value_cat)
             df[var] = pd.Categorical(df[var])
     return df
-
-
-def data_partition(df, date):
-    df["DISBURSED_DATE"] = pd.to_datetime(df["DISBURSED_DATE"])
-    Train = df[df.DISBURSED_DATE <= date]
-    OOT = df[df.DISBURSED_DATE > date]
-    return Train, OOT
 
 
 data = get_data(idc.start_date, idc.end_date)
