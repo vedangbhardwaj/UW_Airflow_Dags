@@ -122,5 +122,6 @@ def missing_ind_convert_num(df):
 
 
 data = get_data(idc.start_date, idc.end_date)
+data.DAYS_SINCE_LAST_DEFAULT_STATUS.head()
 data = missing_ind_convert_num(data)
 write_to_snowflake(data)

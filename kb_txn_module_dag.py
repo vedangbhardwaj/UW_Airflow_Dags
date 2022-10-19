@@ -36,7 +36,7 @@ args = {
     "owner": config["owner"],
     "depends_on_past": False,
     "start_date": airflow.utils.dates.days_ago(1),
-    # "start_date": datetime(2022, 10, 17),
+    # "start_date": datetime(2022, 10, 18),
     "email": config["email"],
     "email_on_failure": False,
     "email_on_retry": False,
@@ -120,19 +120,23 @@ def combined_prediction_dag(prediction_name):
 
         kb_txn_module_wait = ExternalTaskSensor(
             task_id="KB_TXN_MODULE_LR_wait",
+            # poke_interval=60,
+            # timeout=180,
+            # soft_fail=False,
+            # retries=2,
             external_dag_id="KB_TXN_MODULE_dag",
             external_task_id="Model_prediction",
-            execution_date_fn=get_most_recent_dag_run("KB_TXN_MODULE_dag"),
-            # execution_delta= timedelta(hours=1),
+            execution_date_fn=lambda dt: get_most_recent_dag_run("KB_TXN_MODULE_dag"),
+            check_existence=True,
             mode="reschedule",
-            dag=dag,
         )
         kb_activity_module_wait = ExternalTaskSensor(
             task_id="KB_ACTIVITY_MODULE_LR_wait",
             external_dag_id="KB_ACTIVITY_MODULE_dag",
             external_task_id="Model_prediction",
-            execution_date_fn=get_most_recent_dag_run("KB_ACTIVITY_MODULE_dag"),
-            # execution_delta= timedelta(hours=1),
+            execution_date_fn=lambda dt: get_most_recent_dag_run(
+                "KB_ACTIVITY_MODULE_dag"
+            ),
             mode="reschedule",
             dag=dag,
         )
@@ -140,18 +144,17 @@ def combined_prediction_dag(prediction_name):
             task_id="KB_BUREAU_MODULE_LR_wait",
             external_dag_id="KB_BUREAU_MODULE_dag",
             external_task_id="Model_prediction",
-            execution_date_fn=get_most_recent_dag_run("KB_BUREAU_MODULE_dag"),
-            # execution_delta= timedelta(hours=1),
+            execution_date_fn=lambda dt: get_most_recent_dag_run(
+                "KB_BUREAU_MODULE_dag"
+            ),
             mode="reschedule",
             dag=dag,
         )
-
         combined_model_prediction = BashOperator(
             task_id="Combined_model_prediction",
             execution_timeout=timedelta(minutes=60),
             bash_command=f"cd /Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/{prediction_name}; python Model_prediction.py",
         )
-        # report = EmptyOperator(task_id="report", dag=dag)
 
         start >> [kb_txn_module_wait, kb_activity_module_wait, kb_bureau_module_wait]
         [

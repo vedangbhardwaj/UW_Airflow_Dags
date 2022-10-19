@@ -98,8 +98,8 @@ if __name__ == "__main__":
     model_perf2 = pd.read_csv(
         "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_TXN_MODULE/data/Model_selected.csv"
     )
-    Top_models = [103138]
-    j = 103138
+    Top_models = [141553]
+    j = 141553
 
     # for j in Top_models:
     Final_model_vars = list(model_perf2["variable"][model_perf2["Model_no"] == j])
@@ -109,6 +109,7 @@ if __name__ == "__main__":
     Final_scoring_data = pd.concat(
         [data[idc.ID_cols], data_woe[Final_model_vars]], axis=1
     )
+    Final_scoring_data.shape
     pred_data = Final_scoring_data[Final_model_vars]
     # adding has_constant to add_constant col
     pred_data = sm.add_constant(pred_data, has_constant="add")
@@ -123,14 +124,16 @@ if __name__ == "__main__":
     Final_scoring_data["logodds_score"] = np.log(
         Final_scoring_data["pred_train"] / (1 - Final_scoring_data["pred_train"])
     )
-    j = 122230
+
     isotonic = pickle.load(
         open(
             f"/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_TXN_MODULE/models/Model_calibration_{j}.pkl",
             "rb",
         )
     )
+    
     Final_scoring_data["Calib_ISO_PD"] = isotonic.predict(
-        Final_scoring_data["logodds_score"]
+        Final_scoring_data["pred_train"]
     )
+    
     write_to_snowflake(Final_scoring_data)
