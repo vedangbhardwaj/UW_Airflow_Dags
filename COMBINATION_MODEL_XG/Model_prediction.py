@@ -10,6 +10,9 @@ if __name__ == "__main__":
     import yaml
     import pickle
 
+    ### importing initial declaration ###
+    import Initial_declaration as id
+
     ### importing sql queries declaration ##
     import Sql_queries as sq
 
@@ -40,17 +43,18 @@ if __name__ == "__main__":
 
     ### converting pd score to log odds
     Transaction_module_data["trx_logodds"] = np.log(
-        Transaction_module_data["CALIB_ISO_PD"]
-        / (1 - Transaction_module_data["CALIB_ISO_PD"])
+        Transaction_module_data["PRED_TRAIN_XGB"]
+        / (1 - Transaction_module_data["PRED_TRAIN_XGB"])
     )
 
     Activity_module_data["act_logodds"] = np.log(
-        Activity_module_data["CALIB_ISO_PD"]
-        / (1 - Activity_module_data["CALIB_ISO_PD"])
+        Activity_module_data["PRED_TRAIN_XGB"]
+        / (1 - Activity_module_data["PRED_TRAIN_XGB"])
     )
 
     Bureau_module_data["br_logodds"] = np.log(
-        Bureau_module_data["CALIB_ISO_PD"] / (1 - Bureau_module_data["CALIB_ISO_PD"])
+        Bureau_module_data["PRED_TRAIN_XGB"]
+        / (1 - Bureau_module_data["PRED_TRAIN_XGB"])
     )
 
     ### combining the training data
@@ -64,26 +68,23 @@ if __name__ == "__main__":
         Bureau_module_data[["LOAN_ID", "br_logodds"]], on="LOAN_ID", how="left"
     )
 
-    print(data_merge.shape)
-    data_merge.head()
-
     combination_train = data_merge.dropna()
     combination_train.shape
 
     combination_train["comb_score"] = (
-        (43 / 100) * combination_train["trx_logodds"]
-        + (41 / 100) * combination_train["br_logodds"]
-        + (16 / 100) * combination_train["act_logodds"]
+        (46 / 100) * combination_train["trx_logodds"]
+        + (31 / 100) * combination_train["br_logodds"]
+        + (23 / 100) * combination_train["act_logodds"]
     )
 
     combination_train["PD_score"] = 1 / (1 + np.exp(-combination_train["comb_score"]))
-    
 
-    # pickled_model = pickle.load(
-    #     open(
-    #         f"/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_ACTIVITY_MODULE/models/Model_{j}.pkl",
-    #         "rb",
-    #     )
-    # )
+    model_calib = pickle.load(
+        open(f"{id.model_path}Model_LR_calibration_xgb.pkl", "rb")
+    )
 
-    # combination_train['Calib_PD']=pickled_model.predict(combination_train['comb_score'])
+    combination_train["Calib_PD"] = model_calib.predict(
+        sm.add_constant(combination_train["comb_score"])
+    )
+
+    combination_train.to_csv("XG_combined_op.csv", index=False)

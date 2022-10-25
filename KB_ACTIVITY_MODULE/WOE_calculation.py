@@ -98,9 +98,11 @@ if __name__ == "__main__":
         return
 
     data = get_data()
+    # print(data.PRICE.describe())
     Final_bin_gini = pd.read_csv(
         "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_ACTIVITY_MODULE/data/Final_bin_gini_performance.csv"
     )
     data_woe = woe_Apply(data, Final_bin_gini)
-
+    # concat_data = pd.concat([data[idc.ID_cols], data_woe], axis=1)
+    # concat_data.to_csv("woe_activity.csv", index=False)
     write_to_snowflake(data_woe)

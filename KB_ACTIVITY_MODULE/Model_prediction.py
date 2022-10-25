@@ -65,6 +65,8 @@ if __name__ == "__main__":
                 dtype_dict[i] = Text
             if dtype_dict[i] == "float64":
                 dtype_dict[i] = Float
+            if dtype_dict[i] == "float32":
+                dtype_dict[i] = Float
             if dtype_dict[i] == "int64":
                 dtype_dict[i] = Integer
         dtype_dict
@@ -96,9 +98,7 @@ if __name__ == "__main__":
     data = get_data()
     data_woe = get_data_woe()
 
-    model_perf2 = pd.read_csv(
-        "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_ACTIVITY_MODULE/data/Model_selected.csv"
-    )
+    model_perf2 = pd.read_csv(f"{idc.data_path}Model_selected.csv")
     Top_models = [0]
     j = 0
     # Keep_cols=['CUSTOMER_ID','DECISION_DATE','IS_FAIL_FLAG','ACCEPT_REJECT','LOAN_ID','DISBURSED_DATE','BAD_FLAG','DAYS_SINCE_LAST_TXN']
@@ -116,24 +116,12 @@ if __name__ == "__main__":
 
     pickled_model = pickle.load(
         open(
-            f"/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_ACTIVITY_MODULE/models/Model_{j}.pkl",
+            f"{idc.model_path}Model_{j}.pkl",
             "rb",
         )
     )
 
     # Final model prediction
     Final_scoring_data["pred_train"] = pickled_model.predict(pred_data)
-
-    # Model calibration
-    isotonic = pickle.load(
-        open(
-            f"/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_ACTIVITY_MODULE/models/Model_calibration_{j}.pkl",
-            "rb",
-        )
-    )
-
-    Final_scoring_data["Calib_ISO_PD"] = isotonic.predict(
-        Final_scoring_data["pred_train"]
-    )
 
     write_to_snowflake(Final_scoring_data)

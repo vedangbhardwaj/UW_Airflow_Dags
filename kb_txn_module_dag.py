@@ -100,7 +100,7 @@ def generate_dag(dataset_name):
     return dag
 
 
-def combined_prediction_dag(prediction_name):
+def combined_prediction_dag(prediction_name, external_task_id):
     with DAG(
         dag_id=f"{prediction_name}_dag",
         default_args=args,
@@ -116,39 +116,48 @@ def combined_prediction_dag(prediction_name):
             if dag_runs:
                 return dag_runs[0].execution_date
 
+        # def get_external_task_id(prediction_name):
+        #     if prediction_name == "COMBINATION_MODEL_LR":
+        #         return "Model_prediction"
+        #     return "XGBoost_Model_Prediction"
+
         start = EmptyOperator(task_id=f"{prediction_name}", dag=dag)
 
         kb_txn_module_wait = ExternalTaskSensor(
-            task_id="KB_TXN_MODULE_LR_wait",
+            task_id="KB_TXN_MODULE_wait",
             # poke_interval=60,
             # timeout=180,
             # soft_fail=False,
             # retries=2,
             external_dag_id="KB_TXN_MODULE_dag",
-            external_task_id="Model_prediction",
-            execution_date_fn=lambda dt: get_most_recent_dag_run("KB_TXN_MODULE_dag"),
+            external_task_id=external_task_id,
+            execution_date_fn=lambda dt: get_most_recent_dag_run(
+                "KB_TXN_MODULE_dag"
+            ),
             check_existence=True,
             mode="reschedule",
         )
         kb_activity_module_wait = ExternalTaskSensor(
-            task_id="KB_ACTIVITY_MODULE_LR_wait",
+            task_id="KB_ACTIVITY_MODULE_wait",
             external_dag_id="KB_ACTIVITY_MODULE_dag",
-            external_task_id="Model_prediction",
+            # external_task_id="Model_prediction",
+            external_task_id=external_task_id,
+            # external_task_id= lambda x : get_external_task_id(prediction_name),
             execution_date_fn=lambda dt: get_most_recent_dag_run(
                 "KB_ACTIVITY_MODULE_dag"
             ),
             mode="reschedule",
-            dag=dag,
         )
         kb_bureau_module_wait = ExternalTaskSensor(
-            task_id="KB_BUREAU_MODULE_LR_wait",
+            task_id="KB_BUREAU_MODULE_wait",
             external_dag_id="KB_BUREAU_MODULE_dag",
-            external_task_id="Model_prediction",
+            # external_task_id="Model_prediction",
+            external_task_id=external_task_id,
+            # external_task_id= lambda x : get_external_task_id(prediction_name),
             execution_date_fn=lambda dt: get_most_recent_dag_run(
                 "KB_BUREAU_MODULE_dag"
             ),
             mode="reschedule",
-            dag=dag,
         )
         combined_model_prediction = BashOperator(
             task_id="Combined_model_prediction",
@@ -167,5 +176,12 @@ def combined_prediction_dag(prediction_name):
 for dataset in ["KB_TXN_MODULE", "KB_ACTIVITY_MODULE", "KB_BUREAU_MODULE"]:
     globals()[f"{dataset}_dag"] = generate_dag(dataset_name=dataset)
 
-for prediction in ["COMBINATION_MODEL_LR"]:
-    globals()[f"{prediction}_dag"] = combined_prediction_dag(prediction_name=prediction)
+for prediction in ["COMBINATION_MODEL_LR", "COMBINATION_MODEL_XG"]:
+    if prediction == "COMBINATION_MODEL_LR":
+        globals()[f"{prediction}_dag"] = combined_prediction_dag(
+            prediction_name=prediction, external_task_id="Model_prediction"
+        )
+    else:
+        globals()[f"{prediction}_dag"] = combined_prediction_dag(
+            prediction_name=prediction, external_task_id="XGBoost_Model_Prediction"
+        )

@@ -32,7 +32,7 @@ if __name__ == "__main__":
     cur = conn.cursor()
 
     def get_data():
-        sql_query = sq.get_transformed_data.format(sd=idc.start_date, ed=idc.end_date)
+        sql_query = sq.get_raw_data.format(sd=idc.start_date, ed=idc.end_date)
         data = pd.read_sql(sql_query, con=conn)
         return data
 
@@ -112,7 +112,8 @@ if __name__ == "__main__":
     Final_scoring_data.shape
     pred_data = Final_scoring_data[Final_model_vars]
     # adding has_constant to add_constant col
-    pred_data = sm.add_constant(pred_data, has_constant="add")
+    pred_data = sm.add_constant(pred_data)
+    # pred_data = sm.add_constant(pred_data, has_constant="add")
     pickled_model = pickle.load(
         open(
             f"/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_TXN_MODULE/models/Model_{j}.pkl",
@@ -121,19 +122,5 @@ if __name__ == "__main__":
     )
 
     Final_scoring_data["pred_train"] = pickled_model.predict(pred_data)
-    Final_scoring_data["logodds_score"] = np.log(
-        Final_scoring_data["pred_train"] / (1 - Final_scoring_data["pred_train"])
-    )
 
-    isotonic = pickle.load(
-        open(
-            f"/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_TXN_MODULE/models/Model_calibration_{j}.pkl",
-            "rb",
-        )
-    )
-    
-    Final_scoring_data["Calib_ISO_PD"] = isotonic.predict(
-        Final_scoring_data["pred_train"]
-    )
-    
     write_to_snowflake(Final_scoring_data)

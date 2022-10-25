@@ -66,6 +66,8 @@ def write_to_snowflake(data, module_name="kb_activity_module"):
             dtype_dict[i] = Text
         if dtype_dict[i] == "float64":
             dtype_dict[i] = Float
+        if dtype_dict[i] == "float32":
+            dtype_dict[i] = Float
         if dtype_dict[i] == "int64":
             dtype_dict[i] = Integer
     dtype_dict
@@ -122,5 +124,6 @@ def missing_ind_convert_num(df):
 
 
 data = get_data(idc.start_date, idc.end_date)
+# data.to_csv("activity_raw_data.csv", index=False)
 data = missing_ind_convert_num(data)
 write_to_snowflake(data)

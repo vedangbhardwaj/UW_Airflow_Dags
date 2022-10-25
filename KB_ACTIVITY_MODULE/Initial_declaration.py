@@ -11,25 +11,11 @@ var_threshold = (
     0.75  ### 75% of variantion in the features gets captured with PCA components
 )
 
-colsList = [
-    "LAST_1_MONTH_CUSTOMERS",
-    "LAST_2_MONTH_CUSTOMERS",
-    "LAST_3_MONTH_CUSTOMERS",
-    "RATIO_OF_CUSTOMERS_ADDED_L1_L3_MNTH",
-    "DELETED_CUSTOMERS",
-    "DELETED_BOOKS",
-    "TOTAL_APPS",
-    "BUSINESS_APPS",
-    "FINANCE_APPS",
-    "BUSINESS_TOTALAPPS_PROPORTION",
-    "FINANCE_TOTALAPPS_PROPORTION",
-    "PRICE",
-]
-
 ID_cols = ["USER_ID", "LOAN_ID", "DISBURSED_DATE", "BAD_FLAG"]
 input_path = "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_ACTIVITY_MODULE/data/raw/"
+data_path = "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_ACTIVITY_MODULE/data/"
 interim_path = "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_ACTIVITY_MODULE/data/interim/"
 output_path = "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_ACTIVITY_MODULE/reports/output/"
 plot_path = "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_ACTIVITY_MODULE/reports/figures/Trend_plots/"
-model_path = "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/KB_ACTIVITY_MODULE/UW_Airflow_Dags/models/"
+model_path = "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_ACTIVITY_MODULE/models/"
 feature_list = pd.read_csv(input_path + "KB_activity_module_variables.csv")
