@@ -1,6 +1,7 @@
 from airflow.models import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.empty import EmptyOperator
+from airflow.operators.python import PythonOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sensors.external_task import ExternalTaskSensor
 from airflow.models import DagRun
@@ -18,6 +19,16 @@ from datetime import datetime
 from datetime import timedelta
 import airflow
 import yaml
+import sys
+
+sys.path.append(
+    "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags"
+)
+import KB_TXN_MODULE as KB_TXN_MODULE
+import KB_ACTIVITY_MODULE as KB_ACTIVITY_MODULE
+import KB_BUREAU_MODULE as KB_BUREAU_MODULE
+import COMBINATION_MODEL_LR as COMBINATION_MODEL_LR
+import COMBINATION_MODEL_XG as COMBINATION_MODEL_XG
 
 # def intimate_of_failure_on_slack(context):
 #     slack_api_token = os.environ.get('SLACK_API_TOKEN')
@@ -36,7 +47,6 @@ args = {
     "owner": config["owner"],
     "depends_on_past": False,
     "start_date": airflow.utils.dates.days_ago(1),
-    # "start_date": datetime(2022, 10, 18),
     "email": config["email"],
     "email_on_failure": False,
     "email_on_retry": False,
@@ -49,22 +59,23 @@ def generate_dag(dataset_name):
     with DAG(
         dag_id=f"{dataset_name}_dag",
         default_args=args,
-        schedule_interval=None,
+        schedule_interval='@daily',
         max_active_runs=1,
         max_active_tasks=1,
         catchup=False,
     ) as dag:
         start = EmptyOperator(task_id=f"{dataset_name}", dag=dag)
-        initial_declaration = BashOperator(
-            task_id="Initial_Declaration",
-            execution_timeout=timedelta(minutes=60),
-            bash_command=f"cd /Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/{dataset_name}; python Initial_declaration.py",
-        )
 
-        getting_data = BashOperator(
+        # def str_to_class(classname):
+        #     return getattr(sys.modules[__name__], classname)
+
+        # module_name = str_to_class(dataset_name)
+
+        getting_data = PythonOperator(
             task_id="Getting_data",
             execution_timeout=timedelta(minutes=60),
-            bash_command=f"cd /Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/{dataset_name}; python Getting_data.py",
+            op_kwargs={"dataset_name": dataset_name},
+            python_callable=globals()[dataset_name].getting_data,
         )
 
         data_validation = BashOperator(
@@ -73,27 +84,31 @@ def generate_dag(dataset_name):
             bash_command=f"cd /Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/{dataset_name}; great_expectations checkpoint run autogen_suite_checkpoint",
         )
 
-        WOE_calculation = BashOperator(
+        WOE_calculation = PythonOperator(
             task_id="WOE_Calculation",
             execution_timeout=timedelta(minutes=60),
-            bash_command=f"cd /Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/{dataset_name}; python WOE_calculation.py",
+            op_kwargs={"dataset_name": dataset_name},
+            python_callable=globals()[dataset_name].woe_calculation,
             trigger_rule="none_skipped",
         )
 
-        model_prediction = BashOperator(
+        model_prediction = PythonOperator(
             task_id="Model_prediction",
             execution_timeout=timedelta(minutes=60),
-            bash_command=f"cd /Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/{dataset_name}; python Model_prediction.py",
+            op_kwargs={"dataset_name": dataset_name},
+            python_callable=globals()[dataset_name].model_prediction,
+            trigger_rule="none_skipped",
         )
 
-        xgboost_model = BashOperator(
+        xgboost_model = PythonOperator(
             task_id="XGBoost_Model_Prediction",
             execution_timeout=timedelta(minutes=60),
-            bash_command=f"cd /Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/{dataset_name}; python XGboost_prediction.py",
+            op_kwargs={"dataset_name": dataset_name},
+            python_callable=globals()[dataset_name].xgboost_model_prediction,
             trigger_rule="none_failed",
         )
 
-    start >> initial_declaration >> getting_data
+    start >> getting_data
     getting_data >> [data_validation, xgboost_model]
     data_validation >> WOE_calculation
     WOE_calculation >> model_prediction
@@ -116,11 +131,6 @@ def combined_prediction_dag(prediction_name, external_task_id):
             if dag_runs:
                 return dag_runs[0].execution_date
 
-        # def get_external_task_id(prediction_name):
-        #     if prediction_name == "COMBINATION_MODEL_LR":
-        #         return "Model_prediction"
-        #     return "XGBoost_Model_Prediction"
-
         start = EmptyOperator(task_id=f"{prediction_name}", dag=dag)
 
         kb_txn_module_wait = ExternalTaskSensor(
@@ -131,18 +141,14 @@ def combined_prediction_dag(prediction_name, external_task_id):
             # retries=2,
             external_dag_id="KB_TXN_MODULE_dag",
             external_task_id=external_task_id,
-            execution_date_fn=lambda dt: get_most_recent_dag_run(
-                "KB_TXN_MODULE_dag"
-            ),
+            execution_date_fn=lambda dt: get_most_recent_dag_run("KB_TXN_MODULE_dag"),
             check_existence=True,
             mode="reschedule",
         )
         kb_activity_module_wait = ExternalTaskSensor(
             task_id="KB_ACTIVITY_MODULE_wait",
             external_dag_id="KB_ACTIVITY_MODULE_dag",
-            # external_task_id="Model_prediction",
             external_task_id=external_task_id,
-            # external_task_id= lambda x : get_external_task_id(prediction_name),
             execution_date_fn=lambda dt: get_most_recent_dag_run(
                 "KB_ACTIVITY_MODULE_dag"
             ),
@@ -151,20 +157,23 @@ def combined_prediction_dag(prediction_name, external_task_id):
         kb_bureau_module_wait = ExternalTaskSensor(
             task_id="KB_BUREAU_MODULE_wait",
             external_dag_id="KB_BUREAU_MODULE_dag",
-            # external_task_id="Model_prediction",
             external_task_id=external_task_id,
-            # external_task_id= lambda x : get_external_task_id(prediction_name),
             execution_date_fn=lambda dt: get_most_recent_dag_run(
                 "KB_BUREAU_MODULE_dag"
             ),
             mode="reschedule",
         )
-        combined_model_prediction = BashOperator(
+        # combined_model_prediction = BashOperator(
+        #     task_id="Combined_model_prediction",
+        #     execution_timeout=timedelta(minutes=60),
+        #     bash_command=f"cd /Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/{prediction_name}; python Model_prediction.py",
+        # )
+        combined_model_prediction = PythonOperator(
             task_id="Combined_model_prediction",
             execution_timeout=timedelta(minutes=60),
-            bash_command=f"cd /Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/{prediction_name}; python Model_prediction.py",
+            op_kwargs={"dataset_name": prediction_name},
+            python_callable=globals()[prediction_name].predict,
         )
-
         start >> [kb_txn_module_wait, kb_activity_module_wait, kb_bureau_module_wait]
         [
             kb_txn_module_wait,
@@ -178,10 +187,10 @@ for dataset in ["KB_TXN_MODULE", "KB_ACTIVITY_MODULE", "KB_BUREAU_MODULE"]:
 
 for prediction in ["COMBINATION_MODEL_LR", "COMBINATION_MODEL_XG"]:
     if prediction == "COMBINATION_MODEL_LR":
-        globals()[f"{prediction}_dag"] = combined_prediction_dag(
+        globals()[f"{prediction}_dag_temp"] = combined_prediction_dag(
             prediction_name=prediction, external_task_id="Model_prediction"
         )
     else:
-        globals()[f"{prediction}_dag"] = combined_prediction_dag(
+        globals()[f"{prediction}_dag_temp"] = combined_prediction_dag(
             prediction_name=prediction, external_task_id="XGBoost_Model_Prediction"
         )
