@@ -1,6 +1,10 @@
-from airflow.models import DAG
+# 1. setup variables - Done
+# 2. Get files from AWS itself
+# 3. Test and perfect code in DEV
+
+from airflow.models import DAG, Variable
 from airflow.operators.bash import BashOperator
-from airflow.operators.empty import EmptyOperator
+from airflow.operators.dummy import DummyOperator
 from airflow.operators.python import PythonOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sensors.external_task import ExternalTaskSensor
@@ -15,6 +19,7 @@ from airflow.models import DagRun
 #     CheckpointConfig,
 # )
 
+
 from datetime import datetime
 from datetime import timedelta
 import airflow
@@ -24,6 +29,11 @@ import sys
 sys.path.append(
     "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags"
 )
+
+# root_folder = os.path.abspath(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) ## In order to import clients package which is one directory above from dev directory or prod directory
+# sys.path.append(root_folder) ## This could be removed when we start publishing packages and directly use them.
+
+
 import KB_TXN_MODULE as KB_TXN_MODULE
 import KB_ACTIVITY_MODULE as KB_ACTIVITY_MODULE
 import KB_BUREAU_MODULE as KB_BUREAU_MODULE
@@ -40,8 +50,7 @@ import COMBINATION_MODEL_XG as COMBINATION_MODEL_XG
 
 #     slack.chat.post_message('airflow-jobs-slack-alerts', message ,username='Airflow',icon_emoji=':wind_blowing_face:')
 
-with open("airflow_config.yml") as config_file:
-    config = yaml.full_load(config_file)
+config = Variable.get("underwriting_dags", deserialize_json=True)
 
 args = {
     "owner": config["owner"],
@@ -59,12 +68,12 @@ def generate_dag(dataset_name):
     with DAG(
         dag_id=f"{dataset_name}_dag",
         default_args=args,
-        schedule_interval='@daily',
+        schedule_interval=None,
         max_active_runs=1,
         max_active_tasks=1,
         catchup=False,
     ) as dag:
-        start = EmptyOperator(task_id=f"{dataset_name}", dag=dag)
+        start = DummyOperator(task_id=f"{dataset_name}", dag=dag)
 
         # def str_to_class(classname):
         #     return getattr(sys.modules[__name__], classname)
@@ -131,7 +140,7 @@ def combined_prediction_dag(prediction_name, external_task_id):
             if dag_runs:
                 return dag_runs[0].execution_date
 
-        start = EmptyOperator(task_id=f"{prediction_name}", dag=dag)
+        start = DummyOperator(task_id=f"{prediction_name}", dag=dag)
 
         kb_txn_module_wait = ExternalTaskSensor(
             task_id="KB_TXN_MODULE_wait",
@@ -174,12 +183,12 @@ def combined_prediction_dag(prediction_name, external_task_id):
             op_kwargs={"dataset_name": prediction_name},
             python_callable=globals()[prediction_name].predict,
         )
-        start >> [kb_txn_module_wait, kb_activity_module_wait, kb_bureau_module_wait]
-        [
-            kb_txn_module_wait,
-            kb_activity_module_wait,
-            kb_bureau_module_wait,
-        ] >> combined_model_prediction
+    start >> [kb_txn_module_wait, kb_activity_module_wait, kb_bureau_module_wait]
+    [
+        kb_txn_module_wait,
+        kb_activity_module_wait,
+        kb_bureau_module_wait,
+    ] >> combined_model_prediction
 
 
 for dataset in ["KB_TXN_MODULE", "KB_ACTIVITY_MODULE", "KB_BUREAU_MODULE"]:
@@ -187,10 +196,10 @@ for dataset in ["KB_TXN_MODULE", "KB_ACTIVITY_MODULE", "KB_BUREAU_MODULE"]:
 
 for prediction in ["COMBINATION_MODEL_LR", "COMBINATION_MODEL_XG"]:
     if prediction == "COMBINATION_MODEL_LR":
-        globals()[f"{prediction}_dag_temp"] = combined_prediction_dag(
+        globals()[f"{prediction}_dag"] = combined_prediction_dag(
             prediction_name=prediction, external_task_id="Model_prediction"
         )
     else:
-        globals()[f"{prediction}_dag_temp"] = combined_prediction_dag(
+        globals()[f"{prediction}_dag"] = combined_prediction_dag(
             prediction_name=prediction, external_task_id="XGBoost_Model_Prediction"
         )

@@ -37,6 +37,7 @@ if __name__ == "__main__":
         role=config["role"],
         warehouse=config["warehouse"],
         database=config["database"],
+        insecure_mode=True
     )
     cur = conn.cursor()
 

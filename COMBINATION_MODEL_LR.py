@@ -1,14 +1,15 @@
-import pandas as pd
+import pickle
 import numpy as np
-import math
-import statsmodels.api as sm
+import pandas as pd
 import snowflake.connector
+import statsmodels.api as sm
+from airflow.models import Variable
 from snowflake.connector.pandas_tools import pd_writer
 from snowflake.sqlalchemy import URL
 from sqlalchemy import create_engine
-import yaml
-import pickle
+
 from sql_queries import Get_query
+import boto3
 
 missing_value_num = -99999  ### missing value assignment
 missing_value_cat = "missing"
@@ -20,10 +21,11 @@ var_threshold = (
     0.75  ### 75% of variantion in the features gets captured with PCA components
 )
 
-model_path = "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/COMBINATION_MODEL_LR/models/"
+model_path = "underwriting_assets/combination_model_lr/models/"
 
-with open("airflow_config.yml") as config_file:
-    config = yaml.full_load(config_file)
+config = Variable.get("underwriting_dags", deserialize_json=True)
+s3 = boto3.resource("s3")
+s3_bucket = config["s3_bucket"]
 
 conn = snowflake.connector.connect(
     user=config["user"],
@@ -94,10 +96,17 @@ def predict(dataset_name, **context):
 
     combination_train["PD_score"] = 1 / (1 + np.exp(-combination_train["comb_score"]))
 
-    model_calib = pickle.load(open(f"{id.model_path}Model_LR_calibration_LR.pkl", "rb"))
-
+    # model_calib = pickle.load(open(f"{id.model_path}Model_LR_calibration_LR.pkl", "rb"))
+    model_calib = pickle.loads(
+        s3.Bucket(s3_bucket)
+        .Object(f"{model_path}Model_LR_calibration_LR.pkl")
+        .get()["Body"]
+        .read()
+    )
     combination_train["Calib_PD"] = model_calib.predict(
         sm.add_constant(combination_train["comb_score"])
     )
 
     # combination_train.to_csv("LR_combined_op.csv", index=False)
+    cur.close()
+    conn.close()

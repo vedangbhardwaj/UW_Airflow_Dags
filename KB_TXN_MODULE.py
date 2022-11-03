@@ -1,21 +1,19 @@
 #### initial declarations
-from xml.sax.handler import feature_external_ges
+import pickle
+import numpy as np
 import pandas as pd
-from sql_queries import Get_query
-import re
+import scorecardpy as sc
 import snowflake.connector
-from datetime import date, datetime, timedelta
+import statsmodels.api as sm
+
+from airflow.models import Variable
+import logging  
 from snowflake.connector.pandas_tools import pd_writer
 from snowflake.sqlalchemy import URL
 from sqlalchemy import create_engine
-import builtins
-from termcolor import colored
-from sklearn import metrics
-import scorecardpy as sc
-import statsmodels.api as sm
-import yaml
-import pickle
-import numpy as np
+
+from sql_queries import Get_query
+import boto3
 
 # Initial declaration
 missing_value_num = -99999  ### missing value assignment
@@ -30,13 +28,26 @@ var_threshold = (
 
 ## To-Do consume files at run directly from s3.
 ID_cols = ["USER_ID", "LOAN_ID", "DISBURSED_DATE", "BAD_FLAG"]
-input_path = "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_TXN_MODULE/data/raw/"
-data_path = "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_TXN_MODULE/data/"
-model_path = "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_TXN_MODULE/models/"
-feature_list = pd.read_csv(input_path + "KB_transaction_module_variables.csv")
+input_path = "underwriting_assets/txn_module/data/raw/"
+data_path = "underwriting_assets/txn_module/data/"
+model_path = "underwriting_assets/txn_module/models/"
 
-with open("airflow_config.yml") as config_file:
-    config = yaml.full_load(config_file)
+config = Variable.get("underwriting_dags", deserialize_json=True)
+logging.getLogger('snowflake.connector.network').disabled=True
+
+s3 = boto3.resource("s3")
+s3_bucket = config["s3_bucket"]
+
+
+def read_file(bucket_name, file_name):
+    obj = s3.meta.client.get_object(Bucket=bucket_name, Key=file_name)
+    return obj["Body"]
+
+
+# feature_list = pd.read_csv(input_path + "KB_transaction_module_variables.csv")
+feature_list = pd.read_csv(
+    read_file(s3_bucket, input_path + "KB_transaction_module_variables.csv")
+)
 
 conn = snowflake.connector.connect(
     user=config["user"],
@@ -45,6 +56,7 @@ conn = snowflake.connector.connect(
     role=config["role"],
     warehouse=config["warehouse"],
     database=config["database"],
+    insecure_mode=True
 )
 cur = conn.cursor()
 
@@ -70,9 +82,9 @@ def getting_data(dataset_name, **context):
             DateTime,
             Float,
             Integer,
+            Interval,
             Text,
             Time,
-            Interval,
         )
 
         dtype_dict = data1.dtypes.apply(lambda x: x.name).to_dict()
@@ -137,7 +149,8 @@ def getting_data(dataset_name, **context):
     # print(data.memory_usage(deep=True).sum())
     data = missing_ind_convert_num(data)
     write_to_snowflake(data)
-
+    cur.close()
+    conn.close()
 
 def woe_calculation(dataset_name):
     def get_data():
@@ -162,9 +175,9 @@ def woe_calculation(dataset_name):
             DateTime,
             Float,
             Integer,
+            Interval,
             Text,
             Time,
-            Interval,
         )
 
         dtype_dict = data1.dtypes.apply(lambda x: x.name).to_dict()
@@ -205,11 +218,13 @@ def woe_calculation(dataset_name):
 
     data = get_data()
     Final_bin_gini = pd.read_csv(
-        "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_TXN_MODULE/data/Final_bin_gini_performance.csv"
+        # Final_bin_gini_performance
+        read_file(s3_bucket, data_path + "Final_bin_gini_performance.csv")
     )
     data_woe = woe_Apply(data, Final_bin_gini)
     write_to_snowflake(data_woe)
-
+    cur.close()
+    conn.close()
 
 def model_prediction(dataset_name):
     def get_data():
@@ -232,9 +247,9 @@ def model_prediction(dataset_name):
             DateTime,
             Float,
             Integer,
+            Interval,
             Text,
             Time,
-            Interval,
         )
 
         dtype_dict = data1.dtypes.apply(lambda x: x.name).to_dict()
@@ -277,7 +292,8 @@ def model_prediction(dataset_name):
     data_woe = get_data_woe()
 
     model_perf2 = pd.read_csv(
-        "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_TXN_MODULE/data/Model_selected.csv"
+        # "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_TXN_MODULE/data/Model_selected.csv"
+        read_file(s3_bucket, model_path + "Model_selected.csv")
     )
     Top_models = [141553]
     j = 141553
@@ -293,17 +309,23 @@ def model_prediction(dataset_name):
     # adding has_constant to add_constant col
     pred_data = sm.add_constant(pred_data)
     # pred_data = sm.add_constant(pred_data, has_constant="add")
-    pickled_model = pickle.load(
-        open(
-            f"/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_TXN_MODULE/models/Model_{j}.pkl",
-            "rb",
-        )
+
+    # pickled_model = pickle.load(
+    #     open(
+    #         f"/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_TXN_MODULE/models/Model_{j}.pkl",
+    #         "rb",
+    #     )
+    # )
+
+    pickled_model = pickle.loads(
+        s3.Bucket(s3_bucket).Object(f"{model_path}Model_{j}.pkl").get()["Body"].read()
     )
 
     Final_scoring_data["pred_train"] = pickled_model.predict(pred_data)
 
     write_to_snowflake(Final_scoring_data)
-
+    cur.close()
+    conn.close()
 
 def xgboost_model_prediction(dataset_name):
     def get_data(start_date, end_date):
@@ -324,9 +346,9 @@ def xgboost_model_prediction(dataset_name):
             DateTime,
             Float,
             Integer,
+            Interval,
             Text,
             Time,
-            Interval,
         )
 
         dtype_dict = data1.dtypes.apply(lambda x: x.name).to_dict()
@@ -391,29 +413,44 @@ def xgboost_model_prediction(dataset_name):
     data = get_data(start_date, end_date)
     data = missing_ind_convert_num(data)
 
-    XGB_keep_var_list = pd.read_csv(f"{model_path}XGBoost_feature_list.csv")
+    XGB_keep_var_list = pd.read_csv(
+        # f"{model_path}XGBoost_feature_list.csv"
+        read_file(s3_bucket, model_path + "XGBoost_feature_list.csv")
+    )
     keep_var_list = list(XGB_keep_var_list["variables"])
 
     data1 = data[keep_var_list]
 
-    pickled_model = pickle.load(
-        open(
-            f"{model_path}Model_xgb.pkl",
-            "rb",
-        )
+    # pickled_model = pickle.load(
+    #     open(
+    #         f"{model_path}Model_xgb.pkl",
+    #         "rb",
+    #     )
+    # )
+    pickled_model = pickle.loads(
+        s3.Bucket(s3_bucket).Object(f"{model_path}Model_xgb.pkl").get()["Body"].read()
     )
 
     data["pred_train"] = pickled_model.predict_proba(data1)[:, 1]
 
     data["logodds_score"] = np.log(data["pred_train"] / (1 - data["pred_train"]))
 
-    model_xgb_calib = pickle.load(
-        open(
-            f"{model_path}Model_LR_calibration_xgb.pkl",
-            "rb",
-        )
+    # model_xgb_calib = pickle.load(
+    #     open(
+    #         f"{model_path}Model_LR_calibration_xgb.pkl",
+    #         "rb",
+    #     )
+    # )
+    model_xgb_calib = pickle.loads(
+        s3.Bucket(s3_bucket)
+        .Object(f"{model_path}Model_LR_calibration_xgb.pkl")
+        .get()["Body"]
+        .read()
     )
+
     data["pred_train_xgb"] = model_xgb_calib.predict(
         sm.add_constant(data["logodds_score"])
     )
     write_to_snowflake(data)
+    cur.close()
+    conn.close()
