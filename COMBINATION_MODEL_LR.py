@@ -37,10 +37,12 @@ conn = snowflake.connector.connect(
 )
 cur = conn.cursor()
 
+
 def truncate_table(identifier, dataset_name):
     sql_cmd = f"TRUNCATE TABLE IF EXISTS analytics.kb_analytics.airflow_demo_write_{identifier}_{dataset_name}"
     cur.execute(sql_cmd)
     return
+
 
 def predict(dataset_name, **context):
     def get_data(module_name):
@@ -99,7 +101,7 @@ def predict(dataset_name, **context):
 
         # con = engine.raw_connection()
         data1.columns = map(lambda x: str(x).upper(), data1.columns)
-        name = f'airflow_demo_write_final_result_{dataset_name.lower()}'
+        name = f"airflow_demo_write_final_result_{dataset_name.lower()}"
         data1.to_sql(
             name=name,
             con=engine,

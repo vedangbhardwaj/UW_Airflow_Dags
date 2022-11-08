@@ -5,7 +5,7 @@ from airflow.models import Variable
 import snowflake.connector
 from sql_queries import Get_query
 import pandas as pd
-import pickle 
+import pickle
 from s3fs.core import S3FileSystem
 from xgboost import XGBClassifier
 import boto3
@@ -31,11 +31,12 @@ globals()["KB_BUREAU_MODULE"].xgboost_model_prediction("KB_BUREAU_MODULE")
 globals()["KB_BUREAU_MODULE"].model_prediction("KB_BUREAU_MODULE")
 
 import COMBINATION_MODEL_LR as COMBINATION_MODEL_LR
+
 globals()["COMBINATION_MODEL_LR"].predict("COMBINATION_MODEL_LR")
 
 import COMBINATION_MODEL_XG as COMBINATION_MODEL_XG
-globals()["COMBINATION_MODEL_XG"].predict("COMBINATION_MODEL_XG")
 
+globals()["COMBINATION_MODEL_XG"].predict("COMBINATION_MODEL_XG")
 
 
 config = Variable.get("underwriting_dags", deserialize_json=True)
@@ -51,6 +52,7 @@ conn = snowflake.connector.connect(
 )
 cur = conn.cursor()
 
+
 def get_data(module_name):
     sql_cmd = None
     if module_name == "KB_TXN_MODULE":
@@ -65,6 +67,7 @@ def get_data(module_name):
     df.columns = [i for i in colnames]
     return df
 
+
 Transaction_module_data = get_data("KB_TXN_MODULE")
 
 config = Variable.get("underwriting_dags", deserialize_json=True)
@@ -75,7 +78,11 @@ pickled_model = XGBClassifier()
 
 s3_file = S3FileSystem()
 
-s3_obj = s3_file.open('{}/{}'.format(s3_bucket,"underwriting_assets/activity_module/models/model_xgb_json.json")).read()
+s3_obj = s3_file.open(
+    "{}/{}".format(
+        s3_bucket, "underwriting_assets/activity_module/models/model_xgb_json.json"
+    )
+).read()
 type(s3_obj)
 
 json_object = json.loads(s3_obj)
@@ -83,21 +90,45 @@ json_object = json.loads(s3_obj)
 
 type(json_object)
 
-json.loads(s3_file.open('{}/{}'.format(s3_bucket,"underwriting_assets/activity_module/models/model_xgb_json.json")).read())
+json.loads(
+    s3_file.open(
+        "{}/{}".format(
+            s3_bucket, "underwriting_assets/activity_module/models/model_xgb_json.json"
+        )
+    ).read()
+)
 
-pickled_model.load_model(json.loads(s3_file.open('{}/{}'.format(s3_bucket,"underwriting_assets/activity_module/models/model_xgb_json.json")).read().decode('utf-8')))
+pickled_model.load_model(
+    json.loads(
+        s3_file.open(
+            "{}/{}".format(
+                s3_bucket,
+                "underwriting_assets/activity_module/models/model_xgb_json.json",
+            )
+        )
+        .read()
+        .decode("utf-8")
+    )
+)
 
-pickled_model.load_model(json.loads(s3_file.open('{}/{}'.format(s3_bucket,"underwriting_assets/activity_module/models/model_xgb_json.json")).read()))
+pickled_model.load_model(
+    json.loads(
+        s3_file.open(
+            "{}/{}".format(
+                s3_bucket,
+                "underwriting_assets/activity_module/models/model_xgb_json.json",
+            )
+        ).read()
+    )
+)
 
 
-
-
-s3_client = boto3.client('s3')
-s3.meta.client.download_file(s3_bucket,"underwriting_assets/activity_module/models/model_xgb_json.json",'s3_downloaded_json.json')
+s3_client = boto3.client("s3")
+s3.meta.client.download_file(
+    s3_bucket,
+    "underwriting_assets/activity_module/models/model_xgb_json.json",
+    "s3_downloaded_json.json",
+)
 
 type(json_object)
 pickled_model.load_model("s3_downloaded_json.json")
-
-
-
-

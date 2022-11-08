@@ -13,13 +13,15 @@ logger = logging.getLogger("airflow.task")
 logging.info("Program started ....")
 
 # Initial declaration
-missing_value_num= -99999  ### missing value assignment
-missing_value_cat="missing"
-start_date="2021-08-01" ### Start date of modelling sample data
-end_date="2022-07-31"   ### End date of modelling sample data
-partition_date="2022-06-30" ## Train and OOT partition date
-IV_threshold=0.02  ### threshold for IV (IV should be accepted
-var_threshold=0.80  ### 75% of variantion in the features gets captured with PCA components
+missing_value_num = -99999  ### missing value assignment
+missing_value_cat = "missing"
+start_date = "2021-08-01"  ### Start date of modelling sample data
+end_date = "2022-07-31"  ### End date of modelling sample data
+partition_date = "2022-06-30"  ## Train and OOT partition date
+IV_threshold = 0.02  ### threshold for IV (IV should be accepted
+var_threshold = (
+    0.80  ### 75% of variantion in the features gets captured with PCA components
+)
 
 ## To-Do consume files at run directly from s3.
 ID_cols = ["USER_ID", "LOAN_ID", "DISBURSED_DATE", "BAD_FLAG"]
@@ -44,7 +46,8 @@ def truncate_table(identifier, dataset_name):
     cur.execute(sql_cmd)
     return
 
-def write_to_snowflake(data,identifier,dataset_name):
+
+def write_to_snowflake(data, identifier, dataset_name):
     data1 = data.copy()
     from sqlalchemy.types import (
         Boolean,
@@ -86,7 +89,7 @@ def write_to_snowflake(data,identifier,dataset_name):
 
     # con = engine.raw_connection()
     data1.columns = map(lambda x: str(x).upper(), data1.columns)
-    name = f'airflow_demo_write_{identifier}_{dataset_name.lower()}'
+    name = f"airflow_demo_write_{identifier}_{dataset_name.lower()}"
     data1.to_sql(
         name=name,
         con=engine,
@@ -157,7 +160,7 @@ def getting_data(dataset_name, **context):
     # print(data.memory_usage(deep=True).sum())
     data = missing_ind_convert_num(data)
     truncate_table("transformed", dataset_name.lower())
-    write_to_snowflake(data,"transformed", dataset_name.lower())
+    write_to_snowflake(data, "transformed", dataset_name.lower())
     # conn.close()
 
 
@@ -177,7 +180,7 @@ def woe_calculation(dataset_name):
         data_w_features = data_w.filter(regex="_woe$", axis=1)
         # data_w_bad = data_w["BAD_FLAG"]
         # data_woe = pd.concat([data_w_bad, data_w_features], axis=1)
-        data_woe=data_w_features
+        data_woe = data_w_features
         return data_woe
 
     data = get_data()
@@ -187,7 +190,7 @@ def woe_calculation(dataset_name):
     )
     data_woe = woe_Apply(data, Final_bin_gini)
     truncate_table("transformed_woe", dataset_name.lower())
-    write_to_snowflake(data_woe,"transformed_woe", dataset_name.lower())
+    write_to_snowflake(data_woe, "transformed_woe", dataset_name.lower())
     # cur.close()
     # conn.close()
 
@@ -246,7 +249,7 @@ def model_prediction(dataset_name):
 
     Final_scoring_data["pred_train"] = pickled_model.predict(pred_data)
     truncate_table("result", dataset_name.lower())
-    write_to_snowflake(Final_scoring_data,"result", dataset_name.lower())
+    write_to_snowflake(Final_scoring_data, "result", dataset_name.lower())
     # cur.close()
     # conn.close()
 
@@ -352,7 +355,7 @@ def xgboost_model_prediction(dataset_name):
         sm.add_constant(data["logodds_score"])
     )
     truncate_table("result_xgb", dataset_name.lower())
-    write_to_snowflake(data,"result_xgb", dataset_name.lower())
+    write_to_snowflake(data, "result_xgb", dataset_name.lower())
     logging.info("Finished Model prediction 2")
     # cur.close()
     # conn.close()
