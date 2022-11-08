@@ -6,18 +6,19 @@ from airflow.models import Variable
 from snowflake.connector.pandas_tools import pd_writer
 from snowflake.sqlalchemy import URL
 from sqlalchemy import create_engine
-import functools
+import io
 from s3fs.core import S3FileSystem
 
-missing_value_num = -99999  ### missing value assignment
-missing_value_cat = "missing"
-start_date = "2021-08-01"  ### Start date of modelling sample data
-end_date = "2022-07-31"  ### End date of modelling sample data
-partition_date = "2022-06-30"  ## Train and OOT partition date
-IV_threshold = 0.0149  ### threshold for IV (IV should be accepted
-var_threshold = (
-    0.75  ### 75% of variantion in the features gets captured with PCA components
-)
+logger = logging.getLogger("airflow.task")
+logging.info("Program started ....")
+
+missing_value_num= -99999  ### missing value assignment
+missing_value_cat="missing"
+start_date="2021-08-01" ### Start date of modelling sample data
+end_date="2022-07-31"   ### End date of modelling sample data
+partition_date="2022-06-30" ## Train and OOT partition date
+IV_threshold=0.0149  ### threshold for IV (IV should be accepted
+var_threshold=0.75  ### 75% of variantion in the features gets captured with PCA components
 
 
 ## To-Do consume files at run directly from s3.
@@ -37,6 +38,64 @@ def read_file(bucket_name, file_name):
     obj = s3.meta.client.get_object(Bucket=bucket_name, Key=file_name)
     return obj["Body"]
 
+def truncate_table(identifier, dataset_name):
+    sql_cmd = f"TRUNCATE TABLE IF EXISTS ANALYTICS.KB_ANALYTICS.airflow_demo_write_{identifier}_{dataset_name}"
+    cur.execute(sql_cmd)
+    return
+
+def write_to_snowflake(data,identifier,dataset_name):
+    data1 = data.copy()
+    from sqlalchemy.types import (
+        Boolean,
+        Date,
+        DateTime,
+        Float,
+        Integer,
+        Interval,
+        Text,
+        Time,
+    )
+
+    dtype_dict = data1.dtypes.apply(lambda x: x.name).to_dict()
+    for i in dtype_dict:
+        if dtype_dict[i] == "datetime64[ns]":
+            dtype_dict[i] = DateTime
+        if dtype_dict[i] == "object":
+            dtype_dict[i] = Text
+        if dtype_dict[i] == "category":
+            dtype_dict[i] = Text
+        if dtype_dict[i] == "float64":
+            dtype_dict[i] = Float
+        if dtype_dict[i] == "float32":
+            dtype_dict[i] = Float
+        if dtype_dict[i] == "int64":
+            dtype_dict[i] = Integer
+    dtype_dict
+    engine = create_engine(
+        URL(
+            account=config["account"],
+            user=config["user"],
+            password=config["password"],
+            database=config["database"],
+            schema=config["schema"],
+            warehouse=config["warehouse"],
+            role=config["role"],
+        )
+    )
+
+    # con = engine.raw_connection()
+    data1.columns = map(lambda x: str(x).upper(), data1.columns)
+    name = f'airflow_demo_write_{identifier}_{dataset_name.lower()}'
+    data1.to_sql(
+        name=name,
+        con=engine,
+        if_exists="replace",
+        index=False,
+        index_label=None,
+        dtype=dtype_dict,
+        method=pd_writer,
+    )
+    return
 
 # feature_list = pd.read_csv(input_path + "KB_activity_module_variables.csv")
 
@@ -47,7 +106,7 @@ conn = snowflake.connector.connect(
     role=config["role"],
     warehouse=config["warehouse"],
     database=config["database"],
-    # insecure_mode=True,
+    insecure_mode=True,
 )
 cur = conn.cursor()
 
@@ -55,8 +114,12 @@ cur = conn.cursor()
 def getting_data(dataset_name):
     from sql_queries import Get_query
 
-    logger = logging.getLogger("airflow.task")
-    logging.info("Program started ....")
+    logging.basicConfig(
+        filename="myLogFile.log",
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%d-%b-%y %H:%M:%S",
+        level=logging.INFO,
+    )
 
     def read_file(bucket_name, file_name):
         obj = s3.meta.client.get_object(Bucket=bucket_name, Key=file_name)
@@ -75,59 +138,6 @@ def getting_data(dataset_name):
         colnames = [desc[0] for desc in cur.description]
         df.columns = [i for i in colnames]
         return df
-
-    def write_to_snowflake(data, module_name=dataset_name):
-        data1 = data.copy()
-        from sqlalchemy.types import (
-            Boolean,
-            Date,
-            DateTime,
-            Float,
-            Integer,
-            Interval,
-            Text,
-            Time,
-        )
-
-        dtype_dict = data1.dtypes.apply(lambda x: x.name).to_dict()
-        for i in dtype_dict:
-            if dtype_dict[i] == "datetime64[ns]":
-                dtype_dict[i] = DateTime
-            if dtype_dict[i] == "object":
-                dtype_dict[i] = Text
-            if dtype_dict[i] == "category":
-                dtype_dict[i] = Text
-            if dtype_dict[i] == "float64":
-                dtype_dict[i] = Float
-            if dtype_dict[i] == "float32":
-                dtype_dict[i] = Float
-            if dtype_dict[i] == "int64":
-                dtype_dict[i] = Integer
-        dtype_dict
-        engine = create_engine(
-            URL(
-                account=config["account"],
-                user=config["user"],
-                password=config["password"],
-                database=config["database"],
-                schema=config["schema"],
-                warehouse=config["warehouse"],
-                role=config["role"],
-            )
-        )
-
-        # con = engine.raw_connection()
-        data1.columns = map(lambda x: str(x).upper(), data1.columns)
-        data1.to_sql(
-            f"airflow_demo_write_transformed_{module_name}",
-            engine,
-            if_exists="replace",
-            index=False,
-            index_label=None,
-            dtype=dtype_dict,
-            method=pd_writer,
-        )
-        return
 
     cat_col = list(feature_list["variables"][feature_list["Type"] == "Categorical"])
     num_col = list(feature_list["variables"][feature_list["Type"] == "Numerical"])
@@ -155,7 +165,8 @@ def getting_data(dataset_name):
     data = get_data(start_date, end_date)
     # data.to_csv("activity_raw_data.csv", index=False)
     data = missing_ind_convert_num(data)
-    write_to_snowflake(data)
+    truncate_table("transformed", dataset_name.lower())
+    write_to_snowflake(data,"transformed", dataset_name.lower())
     # # cur.close()
     logger.info("Finished Data ingestion and imputation write to Snowflake")
     # s3.Object(s3_bucket, 'airflow/uw_dags_log/object/').upload_file('myLogFile.log')
@@ -178,57 +189,8 @@ def woe_calculation(dataset_name):
         data_w_features = data_w.filter(regex="_woe$", axis=1)
         # data_w_bad = data_w["BAD_FLAG"]
         # data_woe = pd.concat([data_w_bad, data_w_features], axis=1)
-        data_woe = data_w_features
+        data_woe=data_w_features
         return data_woe
-
-    def write_to_snowflake(data, module_name=dataset_name):
-        data1 = data.copy()
-        from sqlalchemy.types import (
-            Boolean,
-            Date,
-            DateTime,
-            Float,
-            Integer,
-            Interval,
-            Text,
-            Time,
-        )
-
-        dtype_dict = data1.dtypes.apply(lambda x: x.name).to_dict()
-        for i in dtype_dict:
-            if dtype_dict[i] == "datetime64[ns]":
-                dtype_dict[i] = DateTime
-            if dtype_dict[i] == "object":
-                dtype_dict[i] = Text
-            if dtype_dict[i] == "category":
-                dtype_dict[i] = Text
-            if dtype_dict[i] == "float64":
-                dtype_dict[i] = Float
-            if dtype_dict[i] == "int64":
-                dtype_dict[i] = Integer
-        dtype_dict
-        engine = create_engine(
-            URL(
-                account=config["account"],
-                user=config["user"],
-                password=config["password"],
-                database=config["database"],
-                schema=config["schema"],
-                warehouse=config["warehouse"],
-                role=config["role"],
-            )
-        )
-        data1.columns = map(lambda x: str(x).upper(), data1.columns)
-        data1.to_sql(
-            f"airflow_demo_write_transformed_woe_{module_name}",
-            engine,
-            if_exists="replace",
-            index=False,
-            index_label=None,
-            dtype=dtype_dict,
-            method=functools.partial(pd_writer, quote_identifiers=False),
-        )
-        return
 
     data = get_data()
     # print(data.PRICE.describe())
@@ -236,19 +198,16 @@ def woe_calculation(dataset_name):
         # "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_ACTIVITY_MODULE/data/Final_bin_gini_performance.csv"
         read_file(s3_bucket, data_path + "Final_bin_gini_performance.csv")
     )
-    logging.info(
-        "*********************File fetched from S3 features list*********************"
-    )
     data_woe = woe_Apply(data, Final_bin_gini)
-    # concat_data = pd.concat([data[ID_cols], data_woe], axis=1)
-    # concat_data.to_csv("woe_activity.csv", index=False)
-    write_to_snowflake(data_woe)
+    truncate_table("transformed_woe", dataset_name.lower())
+    write_to_snowflake(data_woe,"transformed_woe", dataset_name.lower())
     # # cur.close()
     # # conn.close()
 
 
 def model_prediction(dataset_name):
     import pickle
+
     import statsmodels.api as sm
 
     from sql_queries import Get_query
@@ -264,57 +223,6 @@ def model_prediction(dataset_name):
         sql_query = Get_query(dataset_name).get_transformed_woe_data
         data = pd.read_sql(sql_query, con=conn)
         return data
-
-    def write_to_snowflake(data, module_name=dataset_name):
-        data1 = data.copy()
-        from sqlalchemy.types import (
-            Boolean,
-            Date,
-            DateTime,
-            Float,
-            Integer,
-            Interval,
-            Text,
-            Time,
-        )
-
-        dtype_dict = data1.dtypes.apply(lambda x: x.name).to_dict()
-        for i in dtype_dict:
-            if dtype_dict[i] == "datetime64[ns]":
-                dtype_dict[i] = DateTime
-            if dtype_dict[i] == "object":
-                dtype_dict[i] = Text
-            if dtype_dict[i] == "float64":
-                dtype_dict[i] = Float
-            if dtype_dict[i] == "float32":
-                dtype_dict[i] = Float
-            if dtype_dict[i] == "int64":
-                dtype_dict[i] = Integer
-        dtype_dict
-        engine = create_engine(
-            URL(
-                account=config["account"],
-                user=config["user"],
-                password=config["password"],
-                database=config["database"],
-                schema=config["schema"],
-                warehouse=config["warehouse"],
-                role=config["role"],
-            )
-        )
-
-        # con = engine.raw_connection()
-        data1.columns = map(lambda x: str(x).upper(), data1.columns)
-        data1.to_sql(
-            f"airflow_demo_write_result_{module_name}",
-            engine,
-            if_exists="replace",
-            index=False,
-            index_label=None,
-            dtype=dtype_dict,
-            method=pd_writer,
-        )
-        return
 
     data = get_data()
     data_woe = get_data_woe()
@@ -348,18 +256,17 @@ def model_prediction(dataset_name):
 
     # Final model prediction
     Final_scoring_data["pred_train"] = pickled_model.predict(pred_data)
-
-    write_to_snowflake(Final_scoring_data)
+    truncate_table("result", dataset_name.lower())
+    write_to_snowflake(Final_scoring_data,"result", dataset_name.lower())
     # cur.close()
     # conn.close()
 
 
 def xgboost_model_prediction(dataset_name):
     import pickle
-    from xgboost import XGBClassifier
     import numpy as np
     import statsmodels.api as sm
-    import json
+    from xgboost import XGBClassifier
     from sql_queries import Get_query
 
     def read_file(bucket_name, file_name):
@@ -379,59 +286,6 @@ def xgboost_model_prediction(dataset_name):
         colnames = [desc[0] for desc in cur.description]
         df.columns = [i for i in colnames]
         return df
-
-    def write_to_snowflake(data, module_name=dataset_name):
-        data1 = data.copy()
-        from sqlalchemy.types import (
-            Boolean,
-            Date,
-            DateTime,
-            Float,
-            Integer,
-            Interval,
-            Text,
-            Time,
-        )
-
-        dtype_dict = data1.dtypes.apply(lambda x: x.name).to_dict()
-        for i in dtype_dict:
-            if dtype_dict[i] == "datetime64[ns]":
-                dtype_dict[i] = DateTime
-            if dtype_dict[i] == "object":
-                dtype_dict[i] = Text
-            if dtype_dict[i] == "category":
-                dtype_dict[i] = Text
-            if dtype_dict[i] == "float64":
-                dtype_dict[i] = Float
-            if dtype_dict[i] == "float32":
-                dtype_dict[i] = Float
-            if dtype_dict[i] == "int64":
-                dtype_dict[i] = Integer
-        dtype_dict
-        engine = create_engine(
-            URL(
-                account=config["account"],
-                user=config["user"],
-                password=config["password"],
-                database=config["database"],
-                schema=config["schema"],
-                warehouse=config["warehouse"],
-                role=config["role"],
-            )
-        )
-
-        # con = engine.raw_connection()
-        data1.columns = map(lambda x: str(x).upper(), data1.columns)
-        data1.to_sql(
-            f"airflow_demo_write_result_xgb_{module_name}",
-            engine,
-            if_exists="replace",
-            index=False,
-            index_label=None,
-            dtype=dtype_dict,
-            method=pd_writer,
-        )
-        return
 
     cat_col = list(feature_list["variables"][feature_list["Type"] == "Categorical"])
     num_col = list(feature_list["variables"][feature_list["Type"] == "Numerical"])
@@ -461,60 +315,69 @@ def xgboost_model_prediction(dataset_name):
         # f"{model_path}XGBoost_feature_list.csv"
         read_file(s3_bucket, model_path + "XGBoost_feature_list.csv")
     )
-    logging.info(
-        "*********************File fetched from S3 features list*********************"
-    )
+
     keep_var_list = list(XGB_keep_var_list["variables"])
     data1 = data[keep_var_list]
+
+    pickled_model = pickle.loads(
+        s3.Bucket(s3_bucket).Object(f"{model_path}Model_xgb.pkl").get()["Body"].read()
+    )
+
+    # s3_file = S3FileSystem()
     # pickled_model = pickle.load(
-    #     open(
-    #         f"{model_path}Model_xgb.pkl",
-    #         "rb",
+    #     s3_file.open(
+    #         "{}/{}".format(
+    #             s3_bucket, "underwriting_assets/activity_module/models/Model_xgb.pkl"
+    #         )
     #     )
     # )
 
-    # pickled_model = pickle.loads(
-    #     s3.Bucket(s3_bucket).Object(f"{model_path}Model_xgb.pkl").get()["Body"].read()
-    # )
-
-    # pickled_model.load_model(
-    #     json.loads(
-    #         read_file(s3_bucket, model_path + "model_xgb_json.json")
-    #         .read()
-    #         .decode("utf-8")
-    #     )
-    # )
-    pickled_model = XGBClassifier()
-    s3.meta.client.download_file(s3_bucket,f"{model_path}model_xgb_json.json","model_xgb_json_2.json")
-    pickled_model.load_model("model_xgb_json_2.json")
-
+    # pickled_model = XGBClassifier()
+    # s3.meta.client.download_file(s3_bucket,f"{model_path}model_xgb_json.json","model_xgb_json.json")
     # pickled_model.load_model("model_xgb_json.json")
 
+    # new_attrs = [
+    #     "grow_policy",
+    #     "max_bin",
+    #     "eval_metric",
+    #     "callbacks",
+    #     "early_stopping_rounds",
+    #     "max_cat_to_onehot",
+    #     "max_leaves",
+    #     "sampling_method",
+    #     "get_params",
+    # ]
+    # for attr in new_attrs:
+    #     setattr(pickled_model, attr, None)
+
     data["pred_train"] = pickled_model.predict_proba(data1)[:, 1]
-    logging.info(
-        "*********************Pickle loaded and predicted *********************"
-    )
     logging.info("Finished Model prediction")
     data["logodds_score"] = np.log(data["pred_train"] / (1 - data["pred_train"]))
+
+    model_xgb_calib = pickle.loads(
+        s3.Bucket(s3_bucket)
+        .Object(f"{model_path}Model_LR_calibration_xgb.pkl")
+        .get()["Body"]
+        .read()
+    )
+
+
     # model_xgb_calib = pickle.load(
-    #     open(
-    #         f"{model_path}Model_LR_calibration_xgb.pkl",
-    #         "rb",
+    #     s3_file.open(
+    #         "{}/{}".format(
+    #             s3_bucket, "underwriting_assets/activity_module/models/Model_LR_calibration_xgb.pkl"
+    #         )
     #     )
     # )
 
-    # model_xgb_calib = pickle.loads(
-    #     s3.Bucket(s3_bucket)
-    #     .Object(f"{model_path}Model_LR_calibration_xgb.pkl")
-    #     .get()["Body"]
-    #     .read()
-    # )
+    # for attr in new_attrs:
+    #     setattr(pickled_model, attr, None)
 
-    # data["pred_train_xgb"] = model_xgb_calib.predict(
-    #     sm.add_constant(data["logodds_score"])
-    # )
-
-    # write_to_snowflake(data)
-    # logging.info("Finished Model prediction 2")
+    data["pred_train_xgb"] = model_xgb_calib.predict(
+        sm.add_constant(data["logodds_score"])
+    )
+    truncate_table("result_xgb", dataset_name.lower())
+    write_to_snowflake(data,"result_xgb", dataset_name.lower())
+    logging.info("Finished Model prediction 2")
     # cur.close()
     # conn.close()

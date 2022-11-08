@@ -38,11 +38,11 @@ conn = snowflake.connector.connect(
 cur = conn.cursor()
 
 def truncate_table(identifier, dataset_name):
-    sql_cmd = f'TRUNCATE TABLE IF EXISTS analytics.kb_analytics.airflow_demo_write_{identifier}_{dataset_name}'
+    sql_cmd = f"TRUNCATE TABLE IF EXISTS analytics.kb_analytics.airflow_demo_write_{identifier}_{dataset_name}"
     cur.execute(sql_cmd)
     return
 
-def predict(dataset_name):
+def predict(dataset_name, **context):
     def get_data(module_name):
         sql_cmd = None
         if module_name == "KB_TXN_MODULE":
@@ -99,7 +99,7 @@ def predict(dataset_name):
 
         # con = engine.raw_connection()
         data1.columns = map(lambda x: str(x).upper(), data1.columns)
-        name = 'airflow_demo_write_final_result_combination_model_lr'
+        name = f'airflow_demo_write_final_result_{dataset_name.lower()}'
         data1.to_sql(
             name=name,
             con=engine,
@@ -147,9 +147,9 @@ def predict(dataset_name):
     combination_train.shape
 
     combination_train["comb_score"] = (
-        (41 / 100) * combination_train["trx_logodds"]
-        + (40 / 100) * combination_train["br_logodds"]
-        + (19 / 100) * combination_train["act_logodds"]
+        (30 / 100) * combination_train["trx_logodds"]
+        + (42 / 100) * combination_train["br_logodds"]
+        + (28 / 100) * combination_train["act_logodds"]
     )
 
     combination_train["PD_score"] = 1 / (1 + np.exp(-combination_train["comb_score"]))
@@ -170,3 +170,4 @@ def predict(dataset_name):
     # conn.close()
     truncate_table("final_result", dataset_name.lower())
     write_to_snowflake(combination_train)
+    return

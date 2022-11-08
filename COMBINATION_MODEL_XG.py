@@ -39,11 +39,11 @@ conn = snowflake.connector.connect(
 cur = conn.cursor()
 
 def truncate_table(identifier, dataset_name):
-    sql_cmd = f'TRUNCATE TABLE IF EXISTS analytics.kb_analytics.airflow_demo_write_{identifier}_{dataset_name}'
+    sql_cmd = f"TRUNCATE TABLE IF EXISTS analytics.kb_analytics.airflow_demo_write_{identifier}_{dataset_name}"
     cur.execute(sql_cmd)
     return
 
-def predict(dataset_name):
+def predict(dataset_name, **context):
     def get_data(module_name):
         sql_cmd = None
         if module_name == "KB_TXN_MODULE":
@@ -147,9 +147,9 @@ def predict(dataset_name):
     combination_train.shape
 
     combination_train["comb_score"] = (
-        (46 / 100) * combination_train["trx_logodds"]
-        + (31 / 100) * combination_train["br_logodds"]
-        + (23 / 100) * combination_train["act_logodds"]
+        (34 / 100) * combination_train["trx_logodds"]
+        + (35 / 100) * combination_train["br_logodds"]
+        + (31 / 100) * combination_train["act_logodds"]
     )
 
     combination_train["PD_score"] = 1 / (1 + np.exp(-combination_train["comb_score"]))
@@ -173,3 +173,4 @@ def predict(dataset_name):
     # conn.close()
     truncate_table("final_result", dataset_name.lower())
     write_to_snowflake(combination_train)
+    return 
