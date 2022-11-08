@@ -1,7 +1,3 @@
-# 1. setup variables - Done
-# 2. Get files from AWS itself
-# 3. Test and perfect code in DEV
-
 from airflow.models import DAG, Variable
 from airflow.operators.bash import BashOperator
 from airflow.operators.dummy import DummyOperator
@@ -9,6 +5,7 @@ from airflow.operators.python import PythonOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sensors.external_task import ExternalTaskSensor
 from airflow.models import DagRun
+import kubernetes
 
 # from great_expectations_provider.operators.great_expectations import (
 #     GreatExpectationsOperator,
@@ -99,6 +96,7 @@ def generate_dag(dataset_name):
             op_kwargs={"dataset_name": dataset_name},
             python_callable=globals()[dataset_name].woe_calculation,
             trigger_rule="none_skipped",
+            executor_config=kubernetes.resources(memory=2, cpu=2),
         )
 
         model_prediction = PythonOperator(

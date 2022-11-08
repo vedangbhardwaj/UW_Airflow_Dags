@@ -424,7 +424,7 @@ class Get_query:
             self.get_transformed_woe_data = """
                     SELECT * from ANALYTICS.KB_ANALYTICS.airflow_demo_write_transformed_woe_kb_bureau_module 
                     """
-        if self.dataset_name == "COMBINATION_MODEL_LR":
+        if self.dataset_name.strip().upper() == "COMBINATION_MODEL_LR":
             # SQL Query - getting txn module data:
             self.get_txn_data = """
                 select * from ANALYTICS.KB_ANALYTICS.airflow_demo_write_result_kb_txn_module ; 

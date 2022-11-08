@@ -1,16 +1,11 @@
-import pickle
-import numpy as np
+import logging
+import boto3
 import pandas as pd
-import scorecardpy as sc
 import snowflake.connector
-import statsmodels.api as sm
 from airflow.models import Variable
 from snowflake.connector.pandas_tools import pd_writer
 from snowflake.sqlalchemy import URL
 from sqlalchemy import create_engine
-
-from sql_queries import Get_query
-import boto3
 
 missing_value_num = -99999  ### missing value assignment
 missing_value_cat = "missing"
@@ -50,12 +45,14 @@ conn = snowflake.connector.connect(
     role=config["role"],
     warehouse=config["warehouse"],
     database=config["database"],
-    insecure_mode=True
+    insecure_mode=True,
 )
 cur = conn.cursor()
 
 
 def getting_data(dataset_name, **context):
+    from sql_queries import Get_query
+
     def get_data(start_date, end_date):
         sql_cmd = Get_query(dataset_name).get_raw_data.format(
             sd=start_date, ed=end_date
@@ -142,10 +139,14 @@ def getting_data(dataset_name, **context):
     data = get_data(start_date, end_date)
     data = missing_ind_convert_num(data)
     write_to_snowflake(data)
-    cur.close()
-    conn.close()
+    # cur.close()
+    # conn.close()
+
 
 def woe_calculation(dataset_name):
+    import scorecardpy as sc
+    from sql_queries import Get_query
+
     def get_data():
         sql_query = Get_query(dataset_name).get_transformed_data
         data = pd.read_sql(sql_query, con=conn)
@@ -155,9 +156,9 @@ def woe_calculation(dataset_name):
         new_bin = final_bin1[final_bin1.columns[0:13]]
         data_w = sc.woebin_ply(data, new_bin)
         data_w_features = data_w.filter(regex="_woe$", axis=1)
-        data_w_bad = data_w["BAD_FLAG"]
-
-        data_woe = pd.concat([data_w_bad, data_w_features], axis=1)
+        # data_w_bad = data_w["BAD_FLAG"]
+        # data_woe = pd.concat([data_w_bad, data_w_features], axis=1)
+        data_woe = data_w_features
         return data_woe
 
     def write_to_snowflake(data, module_name="kb_bureau_module"):
@@ -216,10 +217,15 @@ def woe_calculation(dataset_name):
     )
     data_woe = woe_Apply(data, Final_bin_gini)
     write_to_snowflake(data_woe)
-    cur.close()
-    conn.close()
+    # cur.close()
+    # conn.close()
+
 
 def model_prediction(dataset_name):
+    import pickle
+    import statsmodels.api as sm
+    from sql_queries import Get_query
+
     def get_data():
         sql_query = Get_query(dataset_name).get_raw_data.format(
             sd=start_date, ed=end_date
@@ -316,7 +322,13 @@ def model_prediction(dataset_name):
 
     write_to_snowflake(Final_scoring_data)
 
+
 def xgboost_model_prediction(dataset_name):
+    import pickle
+    import numpy as np
+    import statsmodels.api as sm
+    from sql_queries import Get_query
+
     def get_data(start_date, end_date):
         sql_cmd = Get_query(dataset_name).get_raw_data.format(
             sd=start_date, ed=end_date
@@ -440,5 +452,5 @@ def xgboost_model_prediction(dataset_name):
     )
 
     write_to_snowflake(data)
-    cur.close()
-    conn.close()
+    # cur.close()
+    # conn.close()

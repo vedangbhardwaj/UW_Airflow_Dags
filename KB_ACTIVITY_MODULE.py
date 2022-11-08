@@ -1,18 +1,13 @@
-import pickle
-
+import logging
 import boto3
-import numpy as np
 import pandas as pd
-import scorecardpy as sc
 import snowflake.connector
-import statsmodels.api as sm
 from airflow.models import Variable
 from snowflake.connector.pandas_tools import pd_writer
 from snowflake.sqlalchemy import URL
 from sqlalchemy import create_engine
-import logging 
-
-from sql_queries import Get_query
+import functools
+from s3fs.core import S3FileSystem
 
 missing_value_num = -99999  ### missing value assignment
 missing_value_cat = "missing"
@@ -32,7 +27,7 @@ data_path = "underwriting_assets/activity_module/data/"
 model_path = "underwriting_assets/activity_module/models/"
 
 config = Variable.get("underwriting_dags", deserialize_json=True)
-logging.getLogger('snowflake.connector.network').disabled=True
+logging.getLogger("snowflake.connector.network").disabled = True
 
 s3 = boto3.resource("s3")
 s3_bucket = config["s3_bucket"]
@@ -44,16 +39,6 @@ def read_file(bucket_name, file_name):
 
 
 # feature_list = pd.read_csv(input_path + "KB_activity_module_variables.csv")
-feature_list = pd.read_csv(
-    read_file(s3_bucket, input_path + "KB_activity_module_variables.csv")
-)
-
-model_xgb_calib = pickle.loads(
-    s3.Bucket(s3_bucket)
-    .Object(f"{model_path}Model_LR_calibration_xgb.pkl")
-    .get()["Body"]
-    .read()
-)
 
 conn = snowflake.connector.connect(
     user=config["user"],
@@ -62,12 +47,25 @@ conn = snowflake.connector.connect(
     role=config["role"],
     warehouse=config["warehouse"],
     database=config["database"],
-    insecure_mode=True
+    # insecure_mode=True,
 )
 cur = conn.cursor()
 
 
-def getting_data(dataset_name, **context):
+def getting_data(dataset_name):
+    from sql_queries import Get_query
+
+    logger = logging.getLogger("airflow.task")
+    logging.info("Program started ....")
+
+    def read_file(bucket_name, file_name):
+        obj = s3.meta.client.get_object(Bucket=bucket_name, Key=file_name)
+        return obj["Body"]
+
+    feature_list = pd.read_csv(
+        read_file(s3_bucket, input_path + "KB_activity_module_variables.csv")
+    )
+
     def get_data(start_date, end_date):
         sql_cmd = Get_query(dataset_name).get_raw_data.format(
             sd=start_date, ed=end_date
@@ -158,10 +156,17 @@ def getting_data(dataset_name, **context):
     # data.to_csv("activity_raw_data.csv", index=False)
     data = missing_ind_convert_num(data)
     write_to_snowflake(data)
-    cur.close()
-    conn.close()
+    # # cur.close()
+    logger.info("Finished Data ingestion and imputation write to Snowflake")
+    # s3.Object(s3_bucket, 'airflow/uw_dags_log/object/').upload_file('myLogFile.log')
+    # # conn.close()
+    return
+
 
 def woe_calculation(dataset_name):
+    import scorecardpy as sc
+    from sql_queries import Get_query
+
     def get_data():
         sql_query = Get_query(dataset_name).get_transformed_data
         data = pd.read_sql(sql_query, con=conn)
@@ -171,9 +176,9 @@ def woe_calculation(dataset_name):
         new_bin = final_bin1[final_bin1.columns[0:13]]
         data_w = sc.woebin_ply(data, new_bin)
         data_w_features = data_w.filter(regex="_woe$", axis=1)
-        data_w_bad = data_w["BAD_FLAG"]
-
-        data_woe = pd.concat([data_w_bad, data_w_features], axis=1)
+        # data_w_bad = data_w["BAD_FLAG"]
+        # data_woe = pd.concat([data_w_bad, data_w_features], axis=1)
+        data_woe = data_w_features
         return data_woe
 
     def write_to_snowflake(data, module_name=dataset_name):
@@ -221,7 +226,7 @@ def woe_calculation(dataset_name):
             index=False,
             index_label=None,
             dtype=dtype_dict,
-            method=pd_writer,
+            method=functools.partial(pd_writer, quote_identifiers=False),
         )
         return
 
@@ -231,14 +236,23 @@ def woe_calculation(dataset_name):
         # "/Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/KB_ACTIVITY_MODULE/data/Final_bin_gini_performance.csv"
         read_file(s3_bucket, data_path + "Final_bin_gini_performance.csv")
     )
+    logging.info(
+        "*********************File fetched from S3 features list*********************"
+    )
     data_woe = woe_Apply(data, Final_bin_gini)
     # concat_data = pd.concat([data[ID_cols], data_woe], axis=1)
     # concat_data.to_csv("woe_activity.csv", index=False)
     write_to_snowflake(data_woe)
-    cur.close()
-    conn.close()
+    # # cur.close()
+    # # conn.close()
+
 
 def model_prediction(dataset_name):
+    import pickle
+    import statsmodels.api as sm
+
+    from sql_queries import Get_query
+
     def get_data():
         sql_query = Get_query(dataset_name).get_raw_data.format(
             sd=start_date, ed=end_date
@@ -307,7 +321,7 @@ def model_prediction(dataset_name):
 
     model_perf2 = pd.read_csv(
         # f"{data_path}Model_selected.csv"
-        read_file(s3_bucket, model_path + "Model_selected.csv")
+        read_file(s3_bucket, data_path + "Model_selected.csv")
     )
     Top_models = [0]
     j = 0
@@ -336,10 +350,26 @@ def model_prediction(dataset_name):
     Final_scoring_data["pred_train"] = pickled_model.predict(pred_data)
 
     write_to_snowflake(Final_scoring_data)
-    cur.close()
-    conn.close()
+    # cur.close()
+    # conn.close()
+
 
 def xgboost_model_prediction(dataset_name):
+    import pickle
+    from xgboost import XGBClassifier
+    import numpy as np
+    import statsmodels.api as sm
+    import json
+    from sql_queries import Get_query
+
+    def read_file(bucket_name, file_name):
+        obj = s3.meta.client.get_object(Bucket=bucket_name, Key=file_name)
+        return obj["Body"]
+
+    feature_list = pd.read_csv(
+        read_file(s3_bucket, input_path + "KB_activity_module_variables.csv")
+    )
+
     def get_data(start_date, end_date):
         sql_cmd = Get_query(dataset_name).get_raw_data.format(
             sd=start_date, ed=end_date
@@ -431,20 +461,40 @@ def xgboost_model_prediction(dataset_name):
         # f"{model_path}XGBoost_feature_list.csv"
         read_file(s3_bucket, model_path + "XGBoost_feature_list.csv")
     )
+    logging.info(
+        "*********************File fetched from S3 features list*********************"
+    )
     keep_var_list = list(XGB_keep_var_list["variables"])
     data1 = data[keep_var_list]
-
     # pickled_model = pickle.load(
     #     open(
     #         f"{model_path}Model_xgb.pkl",
     #         "rb",
     #     )
     # )
-    pickled_model = pickle.loads(
-        s3.Bucket(s3_bucket).Object(f"{model_path}Model_xgb.pkl").get()["Body"].read()
-    )
+
+    # pickled_model = pickle.loads(
+    #     s3.Bucket(s3_bucket).Object(f"{model_path}Model_xgb.pkl").get()["Body"].read()
+    # )
+
+    # pickled_model.load_model(
+    #     json.loads(
+    #         read_file(s3_bucket, model_path + "model_xgb_json.json")
+    #         .read()
+    #         .decode("utf-8")
+    #     )
+    # )
+    pickled_model = XGBClassifier()
+    s3.meta.client.download_file(s3_bucket,f"{model_path}model_xgb_json.json","model_xgb_json_2.json")
+    pickled_model.load_model("model_xgb_json_2.json")
+
+    # pickled_model.load_model("model_xgb_json.json")
 
     data["pred_train"] = pickled_model.predict_proba(data1)[:, 1]
+    logging.info(
+        "*********************Pickle loaded and predicted *********************"
+    )
+    logging.info("Finished Model prediction")
     data["logodds_score"] = np.log(data["pred_train"] / (1 - data["pred_train"]))
     # model_xgb_calib = pickle.load(
     #     open(
@@ -452,17 +502,19 @@ def xgboost_model_prediction(dataset_name):
     #         "rb",
     #     )
     # )
-    model_xgb_calib = pickle.loads(
-        s3.Bucket(s3_bucket)
-        .Object(f"{model_path}Model_LR_calibration_xgb.pkl")
-        .get()["Body"]
-        .read()
-    )
 
-    data["pred_train_xgb"] = model_xgb_calib.predict(
-        sm.add_constant(data["logodds_score"])
-    )
+    # model_xgb_calib = pickle.loads(
+    #     s3.Bucket(s3_bucket)
+    #     .Object(f"{model_path}Model_LR_calibration_xgb.pkl")
+    #     .get()["Body"]
+    #     .read()
+    # )
 
-    write_to_snowflake(data)
-    cur.close()
-    conn.close()
+    # data["pred_train_xgb"] = model_xgb_calib.predict(
+    #     sm.add_constant(data["logodds_score"])
+    # )
+
+    # write_to_snowflake(data)
+    # logging.info("Finished Model prediction 2")
+    # cur.close()
+    # conn.close()

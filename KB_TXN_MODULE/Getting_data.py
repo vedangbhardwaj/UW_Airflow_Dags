@@ -30,7 +30,7 @@ conn = snowflake.connector.connect(
     role=config["role"],
     warehouse=config["warehouse"],
     database=config["database"],
-    insecure_mode=True
+    insecure_mode=True,
 )
 cur = conn.cursor()
 

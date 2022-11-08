@@ -9,7 +9,7 @@ from snowflake.sqlalchemy import URL
 from sqlalchemy import create_engine
 
 ### importing sql queries declaration ##
-import sql_queries as Get_query
+from sql_queries import Get_query
 import boto3
 
 missing_value_num = -99999  ### missing value assignment
@@ -38,21 +38,79 @@ conn = snowflake.connector.connect(
 )
 cur = conn.cursor()
 
+def truncate_table(identifier, dataset_name):
+    sql_cmd = f'TRUNCATE TABLE IF EXISTS analytics.kb_analytics.airflow_demo_write_{identifier}_{dataset_name}'
+    cur.execute(sql_cmd)
+    return
 
-def predict(dataset_name, **context):
+def predict(dataset_name):
     def get_data(module_name):
         sql_cmd = None
         if module_name == "KB_TXN_MODULE":
-            sql_cmd = get_data(Get_query(dataset_name).get_txn_data)
+            sql_cmd = Get_query(dataset_name).get_txn_data
         if module_name == "KB_ACTIVITY_MODULE":
-            sql_cmd = get_data(Get_query(dataset_name).get_activity_data)
+            sql_cmd = Get_query(dataset_name).get_activity_data
         if module_name == "KB_BUREAU_MODULE":
-            sql_cmd = get_data(Get_query(dataset_name).get_bureau_data)
+            sql_cmd = Get_query(dataset_name).get_bureau_data
         cur.execute(sql_cmd)
         df = pd.DataFrame(cur.fetchall())
         colnames = [desc[0] for desc in cur.description]
         df.columns = [i for i in colnames]
         return df
+
+    def write_to_snowflake(data, module_name=dataset_name):
+        data1 = data.copy()
+        from sqlalchemy.types import (
+            Boolean,
+            Date,
+            DateTime,
+            Float,
+            Integer,
+            Interval,
+            Text,
+            Time,
+        )
+
+        dtype_dict = data1.dtypes.apply(lambda x: x.name).to_dict()
+        for i in dtype_dict:
+            if dtype_dict[i] == "datetime64[ns]":
+                dtype_dict[i] = DateTime
+            if dtype_dict[i] == "object":
+                dtype_dict[i] = Text
+            if dtype_dict[i] == "category":
+                dtype_dict[i] = Text
+            if dtype_dict[i] == "float64":
+                dtype_dict[i] = Float
+            if dtype_dict[i] == "float32":
+                dtype_dict[i] = Float
+            if dtype_dict[i] == "int64":
+                dtype_dict[i] = Integer
+        dtype_dict
+        engine = create_engine(
+            URL(
+                account=config["account"],
+                user=config["user"],
+                password=config["password"],
+                database=config["database"],
+                schema=config["schema"],
+                warehouse=config["warehouse"],
+                role=config["role"],
+            )
+        )
+
+        # con = engine.raw_connection()
+        data1.columns = map(lambda x: str(x).upper(), data1.columns)
+        name = f'airflow_demo_write_final_result_{dataset_name.lower()}'
+        data1.to_sql(
+            name=name,
+            con=engine,
+            if_exists="replace",
+            index=False,
+            index_label=None,
+            dtype=dtype_dict,
+            method=pd_writer,
+        )
+        return
 
     Transaction_module_data = get_data("KB_TXN_MODULE")
     Activity_module_data = get_data("KB_ACTIVITY_MODULE")
@@ -111,5 +169,7 @@ def predict(dataset_name, **context):
     )
 
     # combination_train.to_csv("XG_combined_op.csv", index=False)
-    cur.close()
-    conn.close()
+    # cur.close()
+    # conn.close()
+    truncate_table("final_result", dataset_name.lower())
+    write_to_snowflake(combination_train)
