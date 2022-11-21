@@ -1,0 +1,13 @@
+Sno,variables,Type,Trend_Business,Trend_sign
+1,LAST_1_MONTH_CUSTOMERS,Numerical,Decreasing,-1
+2,LAST_2_MONTH_CUSTOMERS,Numerical,Decreasing,-1
+3,LAST_3_MONTH_CUSTOMERS,Numerical,Decreasing,-1
+4,RATIO_OF_CUSTOMERS_ADDED_L1_L3_MNTH,Numerical,Decreasing,-1
+5,DELETED_CUSTOMERS,Numerical,Increasing,1
+10,DELETED_BOOKS,Numerical,Increasing,1
+11,TOTAL_APPS,Numerical,Decreasing,-1
+12,BUSINESS_APPS,Numerical,Decreasing,-1
+13,FINANCE_APPS,Numerical,Decreasing,-1
+14,BUSINESS_TOTALAPPS_PROPORTION,Numerical,Decreasing,-1
+15,FINANCE_TOTALAPPS_PROPORTION,Numerical,Decreasing,-1
+21,PRICE,Numerical,Decreasing,-1

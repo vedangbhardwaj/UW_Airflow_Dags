@@ -210,5 +210,9 @@ get_raw_data = """
     """
 # SQL Query - getting transformed data:
 get_transformed_data = """
-        SELECT * from ANALYTICS.KB_ANALYTICS.airflow_demo_write 
+        SELECT * from ANALYTICS.KB_ANALYTICS.airflow_demo_write_transformed_kb_txn_module
+        """
+
+get_transformed_woe_data = """
+        SELECT * from ANALYTICS.KB_ANALYTICS.airflow_demo_write_transformed_woe_kb_txn_module
         """
