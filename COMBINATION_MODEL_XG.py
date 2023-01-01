@@ -44,7 +44,8 @@ def truncate_table(identifier, dataset_name):
     cur.execute(sql_cmd)
     return
 
-def write_to_snowflake(data,identifier,dataset_name):
+
+def write_to_snowflake(data, identifier, dataset_name):
     data1 = data.copy()
     from sqlalchemy.types import (
         Boolean,
@@ -86,7 +87,7 @@ def write_to_snowflake(data,identifier,dataset_name):
 
     # con = engine.raw_connection()
     data1.columns = map(lambda x: str(x).upper(), data1.columns)
-    name = f'airflow_demo_write_{identifier}_{dataset_name.lower()}'
+    name = f"airflow_demo_write_{identifier}_{dataset_name.lower()}"
     data1.to_sql(
         name=name,
         con=engine,
@@ -97,6 +98,7 @@ def write_to_snowflake(data,identifier,dataset_name):
         method=pd_writer,
     )
     return
+
 
 def predict(dataset_name, **context):
     def get_data(module_name):
@@ -173,5 +175,5 @@ def predict(dataset_name, **context):
     # cur.close()
     # conn.close()
     truncate_table("final_result", dataset_name.lower())
-    write_to_snowflake(combination_train,"final_result", dataset_name.lower())
+    write_to_snowflake(combination_train, "final_result", dataset_name.lower())
     return

@@ -83,7 +83,7 @@ def write_to_snowflake(data, identifier, dataset_name):
 
     # con = engine.raw_connection()
     data1.columns = map(lambda x: str(x).upper(), data1.columns)
-    name = f'airflow_demo_write_{identifier}_{dataset_name.lower()}'
+    name = f"airflow_demo_write_{identifier}_{dataset_name.lower()}"
     data1.to_sql(
         name=name,
         con=engine,

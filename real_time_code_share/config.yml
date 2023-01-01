@@ -1,0 +1,129 @@
+---
+txn_module:
+  missing_value_num: -99999
+  missing_value_cat: missing
+  IV_threshold: 0.02
+  var_threshold: 0.8
+  ID_cols:
+  - USER_ID
+  - BRE_RUN_ID
+  - DISBURSED_DATE
+  - IS_LEDGER_FEATURES_AVAILABLE
+  input_path: underwriting_assets/txn_module/data/raw/
+  data_path: underwriting_assets/txn_module/data/
+  model_path: underwriting_assets/txn_module/models/
+activity_module:
+  missing_value_num: -99999
+  missing_value_cat: missing
+  IV_threshold: 0.0149
+  var_threshold: 0.75
+  ID_cols:
+  - USER_ID
+  - BRE_RUN_ID
+  - DISBURSED_DATE
+  - IS_ACTIVITY_FEATURES_AVAILABLE
+  input_path: underwriting_assets/activity_module/data/raw/
+  data_path: underwriting_assets/activity_module/data/
+  model_path: underwriting_assets/activity_module/models/
+bureau_module:
+  missing_value_num: -99999
+  missing_value_cat: missing
+  IV_threshold: 0.02
+  var_threshold: 0.8
+  ID_cols:
+  - USER_ID
+  - BRE_RUN_ID
+  - DISBURSED_DATE
+  - IS_BUREAU_FEATURES_AVAILBALE
+  input_path: underwriting_assets/bureau_module/data/raw/
+  data_path: underwriting_assets/bureau_module/data/
+  model_path: underwriting_assets/bureau_module/models/
+combination_lr_weights:
+  txn_model_weight: 31
+  bureau_model_weight: 40
+  activity_model_weight: 29
+combination_xgb_weights:
+  txn_model_weight: 35
+  bureau_model_weight: 33
+  activity_model_weight: 32
+xgboost_thresholds:
+  ACT_PRED:
+  - 0.06248632552
+  - 0.06767750457
+  - 0.07366669975
+  - 0.08739994772
+  - 0.09059290817
+  - 0.09425702574
+  - 0.1014595292
+  TXN_PRED:
+  - 0.056636219
+  - 0.075913634
+  - 0.08812542
+  - 0.117674805
+  - 0.129749863
+  - 0.147583809
+  - 0.151125257
+  - 0.171486009
+  BR_PRED:
+  - 0.05763603338
+  - 0.06820528691
+  - 0.07852940411
+  - 0.0685816387
+  - 0.08014054329
+  - 0.08834560518
+  - 0.09741378981
+  - 0.1138685247
+  - 0.1715224464
+  CALIB_PD:
+  - 0.04891831635
+  - 0.07137430765
+  - 0.1022820841
+  - 0.08683620281
+  - 0.1274947968
+  - 0.15054782
+  - 0.2597308696
+  - 0.1718041147
+logistic_reg_thresholds:
+  ACT_PRED:
+  - 0.06266666667
+  - 0.08380884451
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  TXN_PRED:
+  - 0.066073492
+  - 0.072821763
+  - 0.075466848
+  - 0.102034084
+  - 0.105619369
+  - 0.127279223
+  - 0.149242114
+  - 0
+  BR_PRED:
+  - 0.06636814454
+  - 0.0676925324
+  - 0.07339760731
+  - 0.08334964294
+  - 0.105282691
+  - 0.1180842713
+  - 0.1068564693
+  - 0.1646368268
+  - 0
+  CALIB_PD:
+  - 0.05512165686
+  - 0.07044155489
+  - 0.08384804289
+  - 0.07726812552
+  - 0.08696073745
+  - 0.09753571805
+  - 0.1537638578
+  - 0.1744027598
+kubernetes_executor:
+  request_memory: 12Gi
+  limit_memory: 14Gi
+  request_cpu: 4000m
+  limit_cpu: 6500m
+  node_selectors:
+    infra-node-group: node-group-deployment

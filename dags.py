@@ -28,8 +28,12 @@ from datetime import timedelta
 import airflow
 import yaml
 
-root_folder = os.path.abspath(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) ## In order to import clients package which is one directory above from dev directory or prod directory
-sys.path.append(root_folder) ## This could be removed when we start publishing packages and directly use them.
+root_folder = os.path.abspath(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)  ## In order to import clients package which is one directory above from dev directory or prod directory
+sys.path.append(
+    root_folder
+)  ## This could be removed when we start publishing packages and directly use them.
 
 
 import KB_TXN_MODULE as KB_TXN_MODULE
@@ -69,7 +73,7 @@ def generate_dag(dataset_name):
         schedule_interval=None,
         max_active_runs=1,
         max_active_tasks=1,
-        tags=['ds', 'underwriting', 'lending', 'model'],
+        tags=["ds", "underwriting", "lending", "model"],
         catchup=False,
     ) as dag:
         start = DummyOperator(task_id=f"{dataset_name}", dag=dag)
@@ -86,11 +90,11 @@ def generate_dag(dataset_name):
             python_callable=globals()[dataset_name].getting_data,
         )
 
-#         data_validation = BashOperator(
-#             task_id="Data_Validation",
-#             execution_timeout=timedelta(minutes=60),
-#             bash_command=f"cd /Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/{dataset_name}; great_expectations checkpoint run autogen_suite_checkpoint",
-#         )
+        #         data_validation = BashOperator(
+        #             task_id="Data_Validation",
+        #             execution_timeout=timedelta(minutes=60),
+        #             bash_command=f"cd /Users/vedang.bhardwaj/Desktop/work_mode/airflow_learn/UW_Airflow_Dags/{dataset_name}; great_expectations checkpoint run autogen_suite_checkpoint",
+        #         )
 
         WOE_calculation = PythonOperator(
             task_id="WOE_Calculation",
@@ -120,9 +124,9 @@ def generate_dag(dataset_name):
         )
 
     start >> getting_data
-#     getting_data >> [data_validation, xgboost_model]
+    #     getting_data >> [data_validation, xgboost_model]
     getting_data >> [WOE_calculation, xgboost_model]
-#     data_validation >> WOE_calculation
+    #     data_validation >> WOE_calculation
     WOE_calculation >> model_prediction
     return dag
 
@@ -134,7 +138,7 @@ def combined_prediction_dag(prediction_name, external_task_id):
         schedule_interval=None,
         max_active_runs=1,
         max_active_tasks=1,
-        tags=['ds', 'underwriting', 'lending', 'model'],
+        tags=["ds", "underwriting", "lending", "model"],
         catchup=False,
     ) as dag:
 
@@ -194,6 +198,7 @@ def combined_prediction_dag(prediction_name, external_task_id):
         kb_bureau_module_wait,
     ] >> combined_model_prediction
     return dag
+
 
 for dataset in ["KB_TXN_MODULE", "KB_ACTIVITY_MODULE", "KB_BUREAU_MODULE"]:
     globals()[f"{dataset}_dag"] = generate_dag(dataset_name=dataset)
